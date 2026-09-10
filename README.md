@@ -39,18 +39,19 @@ node build/download.mjs      # 抓原站 shell + 22 个 data-N.js  ->  raw/
 node build/parse.mjs         # node:vm 解析 + 正则交叉校验      ->  build/normalized.json
 node build/render.mjs        # 渲染词书与导出                   ->  *.md / *.csv / *.tsv
 node build/make-site.mjs     # 编译为 file:// 可用的逐章数据     ->  site/data/chN.js
-node build/test-site.mjs     # 验收：111 项断言
+pwsh -File build/shoot.ps1   # 无头 Chrome 截 4 张图           ->  .shots/
+node build/test-site.mjs     # 验收：112 项断言
 ```
 
-词库**不入库也能重建**：`raw/` 与 `build/normalized.json` 已被 gitignore，
-克隆后跑前四条命令即可复原全部数据。
+词库**不入库也能重建**：`raw/`、`build/normalized.json`、`.shots/` 均已 gitignore，
+克隆后依次跑上面 6 条命令即可从零复原全部数据与验收证据。
 
 解析用 `node:vm` 隔离上下文按 JS 语义求值（而非正则硬抠），
 再用正则独立计数交叉校验，两者不一致即报错。
 
 ## 验收
 
-`node build/test-site.mjs` — 8 组 **111 项断言**，全部确定性可复现（连跑三次结果一致）：
+`node build/test-site.mjs` — 8 组 **112 项断言**，全部确定性可复现（连跑三次结果一致）：
 
 - **判题内核**：归一化规则逐条对齐原站，含"含标点词判对却满格红"的防回归
 - **键盘输入回归**：字母/空格必须进拼写缓冲，不得被绑定成命令
@@ -64,6 +65,20 @@ node build/test-site.mjs     # 验收：111 项断言
 浏览器部分用**像素当通信信道**：本机无头 Chrome 的 stdout 无法回读，
 所以自检页把断言结果画成 LED 色条（白=对齐基准、绿=通过、红=失败、蓝=终止符，
 读不到终止符即说明脚本中途崩溃），由测试脚本解码 PNG 读回结论——不需要肉眼。
+
+### 干净克隆上的行为
+
+6 组断言依赖被 gitignore 的生成物（`raw/manifest.json`、`build/normalized.json`、
+`.shots/*.png`）。缺它们时脚本**跳过并打印补齐方法，既不崩也不记 FAIL**：
+
+| 场景 | 结果 |
+|---|---|
+| 生成物齐全 | 112 PASS / 0 FAIL / 0 SKIP |
+| 刚克隆、未跑构建 | 98 PASS / 0 FAIL / 6 SKIP（exit 0）|
+
+这是修出来的：早期版本缺 `normalized.json` 时直接 ENOENT 崩溃，C~G 五个组静默不执行，
+**只跑了 83 项却看起来像"通过了"**——验收脚本自己崩掉比断言失败更危险。
+章节清单比对改为退回内置 `EXPECT` 表，因此词数一致性检查在任何克隆上都照常执行。
 
 ## 环境
 

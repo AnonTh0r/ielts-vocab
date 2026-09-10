@@ -216,6 +216,7 @@ node build/download.mjs      # 抓 handout/index 与 22 个 data-N.js
 node build/parse.mjs         # vm 解析 + 交叉校验 -> build/normalized.json
 node build/render.mjs        # 生成 ielts-vocab.md / .csv / .tsv
 node build/make-site.mjs     # 编译 site/data/chN.js
+pwsh -File build/shoot.ps1   # 无头 Chrome 截 4 张图 -> .shots/
 node build/test-site.mjs     # 验收
 ```
 
@@ -235,13 +236,15 @@ node build/test-site.mjs     # 验收
 绿=通过，红=失败，蓝=终止符；读不到终止符即说明脚本中途崩溃），
 由 `test-site.mjs` 手工解码 PNG（`zlib` inflate + 反滤波）读回结论——不需要肉眼。
 
-截图命令（需要 Chrome，profile 目录会被自动创建）：
+截图统一由 **`pwsh -File build/shoot.ps1`** 生成（自动探测 Chrome/Edge 路径、
+每次用全新 user-data-dir 避免残留 localStorage 干扰"首次启动"类断言、截完自动清理）。
+四张图的窗口尺寸各不相同，其中 `sitetest.png` 必须够宽以容纳整条 LED（约 40 格 × 40px）——
+**加断言时记得同步加宽**，否则蓝色终止符被截掉，"读到终止符"这条会假失败。
 
-```powershell
-chrome --headless=old --no-sandbox --disable-gpu --allow-file-access-from-files `
-  --force-device-scale-factor=1 --window-size=1200,400 --virtual-time-budget=15000 `
-  --screenshot=..\.shots\sitetest.png file:///.../site/sitetest.html
-```
+依赖生成物（`raw/manifest.json`、`build/normalized.json`、`.shots/*.png`）的 6 组断言，
+在干净克隆上会 **SKIP 并打印补齐方法，不崩也不记 FAIL**：生成物齐全 112 PASS / 0 SKIP，
+刚克隆未跑构建则 98 PASS / 0 FAIL / 6 SKIP（exit 0）。早期版本缺 `normalized.json` 时
+直接 ENOENT 崩溃、C~G 五组静默不执行，只跑 83 项却像"通过了"——已修。
 
 ## 已知限制
 

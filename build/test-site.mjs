@@ -23,10 +23,22 @@ process.env.TZ = 'Asia/Shanghai';
 const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failures = 0;
+let skipped = 0;
 const ok = (name, cond, detail = '') => {
   if (!cond) failures++;
   console.log(`  ${cond ? 'PASS' : 'FAIL'}  ${name}${detail ? '  [' + detail + ']' : ''}`);
 };
+// 依赖"生成物"的断言（build/normalized.json、.shots/*.png）单独走 SKIP 通道：
+// 这些文件被 gitignore，干净克隆上根本不存在。
+//   不能崩  —— 崩了后面所有组都不执行，等于验收静默失效（真发生过：B 组 ENOENT，C~G 全没跑）；
+//   不算 FAIL —— 不是代码错，是这台机器没跑构建，记 FAIL 会让人误判仓库是坏的。
+const skip = (name, reason) => {
+  skipped++;
+  console.log(`  SKIP  ${name}  [${reason}]`);
+};
+const exists = async f => { try { await stat(f); return true; } catch { return false; } };
+const NEED_BUILD = '已 gitignore；跑 node build/download.mjs && node build/parse.mjs 后可测';
+const NEED_SHOT = '已 gitignore；需用无头 Chrome 重新截图后可测';
 
 // ---------- 在最小 window 环境下载入站点的 core.js ----------
 const coreSrc = await readFile(path.join(ROOT, 'site', 'assets', 'core.js'), 'utf8');
@@ -293,11 +305,16 @@ for (const pg of pages) {
 
     // 数据里出现的每个考频标签都必须有配色规则。
     // 标签名是模板插值（class="tag tag-${w.tag}"），静态扫不出来，只能对着白名单逐个查。
-    const norm = JSON.parse(await readFile(path.join(ROOT, 'build', 'normalized.json'), 'utf8'));
-    const tagsInData = [...new Set(norm.map(w => w.tag))].sort();
-    const tagMissing = tagsInData.filter(t => !baseClasses.has(`tag-${t}`));
-    ok(`数据中的 ${tagsInData.length} 种考频标签均有配色规则`, tagMissing.length === 0,
-       `缺失 ${tagMissing.join(',') || '无'}；数据标签=${tagsInData.join('/')}`);
+    const normPath = path.join(ROOT, 'build', 'normalized.json');
+    if (await exists(normPath)) {
+      const norm = JSON.parse(await readFile(normPath, 'utf8'));
+      const tagsInData = [...new Set(norm.map(w => w.tag))].sort();
+      const tagMissing = tagsInData.filter(t => !baseClasses.has(`tag-${t}`));
+      ok(`数据中的 ${tagsInData.length} 种考频标签均有配色规则`, tagMissing.length === 0,
+         `缺失 ${tagMissing.join(',') || '无'}；数据标签=${tagsInData.join('/')}`);
+    } else {
+      skip('数据中的考频标签均有配色规则', '缺 build/normalized.json，' + NEED_BUILD);
+    }
   }
 
   // 键盘劫持回归守卫：拼写是本页唯一主交互，字母与空格不得被绑定成命令。
@@ -319,25 +336,38 @@ for (const pg of pages) {
 
 // ==================== C. 数据一致性 ====================
 console.log('\n=== C. 章节数据一致性 ===');
-const manifest = JSON.parse(await readFile(path.join(ROOT, 'raw', 'manifest.json'), 'utf8'));
 const EXPECT = {
   1: 227, 2: 130, 3: 168, 4: 70, 5: 401, 6: 122, 7: 79, 8: 68, 9: 175, 10: 135,
   11: 91, 12: 172, 13: 132, 14: 139, 15: 135, 16: 171, 17: 101, 18: 186, 19: 124,
   20: 268, 21: 417, 22: 57,
 };
+// manifest 只用来枚举章节 id，而 EXPECT 已硬编码全部 22 章。
+// raw/ 被 gitignore，干净克隆上没有 manifest.json —— 退回 EXPECT 的键即可，
+// 这样"已提交词库能否解析、词数是否吻合"这条最关键的检查在任何克隆上都跑得起来。
+const manifestPath = path.join(ROOT, 'raw', 'manifest.json');
+let chapterIds;
+if (await exists(manifestPath)) {
+  chapterIds = JSON.parse(await readFile(manifestPath, 'utf8')).chapters.map(c => c.id);
+  ok('manifest 章节表与内置 EXPECT 一致',
+     chapterIds.length === Object.keys(EXPECT).length && chapterIds.every(id => EXPECT[id] !== undefined),
+     `${chapterIds.length} 章`);
+} else {
+  skip('manifest 章节表与内置 EXPECT 比对', '缺 raw/manifest.json，' + NEED_BUILD + '；已退回内置章节表，词数检查照常执行');
+  chapterIds = Object.keys(EXPECT).map(Number);
+}
 let dataTotal = 0;
 const anomalies = [];
 const allKeys = new Set();
-for (const ch of manifest.chapters) {
-  const src = await readFile(path.join(ROOT, 'site', 'data', `ch${ch.id}.js`), 'utf8');
+for (const id of chapterIds) {
+  const src = await readFile(path.join(ROOT, 'site', 'data', `ch${id}.js`), 'utf8');
   const c2 = vm.createContext({ window: {} });
-  vm.runInContext(src, c2, { filename: `ch${ch.id}.js` });
-  const d = c2.window.VOCAB_DATA && c2.window.VOCAB_DATA[String(ch.id)];
-  if (!d) { anomalies.push(`ch${ch.id} 未导出`); continue; }
-  if (d.words.length !== EXPECT[ch.id]) anomalies.push(`ch${ch.id} 词数 ${d.words.length}≠${EXPECT[ch.id]}`);
+  vm.runInContext(src, c2, { filename: `ch${id}.js` });
+  const d = c2.window.VOCAB_DATA && c2.window.VOCAB_DATA[String(id)];
+  if (!d) { anomalies.push(`ch${id} 未导出`); continue; }
+  if (d.words.length !== EXPECT[id]) anomalies.push(`ch${id} 词数 ${d.words.length}≠${EXPECT[id]}`);
   dataTotal += d.words.length;
   for (const w of d.words) {
-    const gk = `ch${ch.id}:${w.id}`;
+    const gk = `ch${id}:${w.id}`;
     if (allKeys.has(gk)) anomalies.push(`全局键重复 ${gk}`);
     allKeys.add(gk);
     if (!C.normalize(w.word)) anomalies.push(`${gk} 词形归一化后为空`);
@@ -427,7 +457,7 @@ const shots = ['quiz.png', 'handout.png'];
 for (const name of shots) {
   const f = path.join(ROOT, '.shots', name);
   let s;
-  try { await stat(f); } catch { ok(`${name} 截图存在`, false, '未生成，跳过'); continue; }
+  if (!(await exists(f))) { skip(`${name} 暗色与渲染分析（4 项）`, `缺 .shots/${name}，` + NEED_SHOT); continue; }
   try { s = analyze(f); } catch (e) { ok(`${name} 解码`, false, e.message); continue; }
   console.log(`  ${name}: ${s.w}x${s.h}  平均亮度 ${s.mean.toFixed(1)}  σ ${s.sd.toFixed(1)}` +
               `  色块 ${s.colors}  主色 ${(s.topShare * 100).toFixed(1)}%  近白像素 ${(s.brightShare * 100).toFixed(1)}%`);
@@ -444,8 +474,12 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 {
   const f = path.join(ROOT, '.shots', 'selftest.png');
   let img = null;
-  try { img = decodePNG(require('fs').readFileSync(f)); }
-  catch (e) { ok('selftest.png 可读', false, e.message); }
+  if (!(await exists(f))) {
+    skip('core.js 在真实浏览器 file:// 下的自检（LED 像素回读）', '缺 .shots/selftest.png，' + NEED_SHOT);
+  } else {
+    try { img = decodePNG(require('fs').readFileSync(f)); }
+    catch (e) { ok('selftest.png 可解码', false, e.message); }
+  }
   if (img) {
     const classify = (r, g, b) => {
       if (r > 200 && g > 200 && b > 200) return 'SYNC';
@@ -502,8 +536,12 @@ console.log('\n=== G. 整页启动自检（解码 sitetest.png，需 --allow-fil
 {
   const f = path.join(ROOT, '.shots', 'sitetest.png');
   let img = null;
-  try { img = decodePNG(require('fs').readFileSync(f)); }
-  catch (e) { ok('sitetest.png 可读', false, e.message); }
+  if (!(await exists(f))) {
+    skip('整页启动与键盘/日历行为自检（LED 像素回读）', '缺 .shots/sitetest.png，' + NEED_SHOT);
+  } else {
+    try { img = decodePNG(require('fs').readFileSync(f)); }
+    catch (e) { ok('sitetest.png 可解码', false, e.message); }
+  }
   if (img) {
     const classify = (r, g, b) => {
       if (r > 200 && g > 200 && b > 200) return 'SYNC';
@@ -532,5 +570,6 @@ console.log('\n=== G. 整页启动自检（解码 sitetest.png，需 --allow-fil
   }
 }
 
-console.log(`\n结论: ${failures === 0 ? '✅ 全部通过' : '❌ ' + failures + ' 项失败'}`);
+console.log(`\n结论: ${failures === 0 ? '✅ 全部通过' : '❌ ' + failures + ' 项失败'}` +
+            (skipped ? `　（另有 ${skipped} 组因缺生成物而跳过，补齐方法见上方 SKIP 行）` : ''));
 process.exitCode = failures ? 1 : 0;
