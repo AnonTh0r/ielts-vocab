@@ -1,6 +1,6 @@
 // download.mjs — 抓取 handout 壳页 + 全部章节数据文件
 // 用法: node build/download.mjs
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import vm from 'node:vm';
@@ -31,10 +31,16 @@ async function get(url, tries = 3) {
   throw new Error(`FAILED ${url}: ${lastErr.message}`);
 }
 
+// raw/ 被 gitignore，干净克隆上并不存在 —— 必须先建目录。
+// 否则第一次 writeFile 就 ENOENT，而 Node 在未捕获异常后退出时还会连带触发
+// libuv 断言（进程以 0xC0000409 收场），把真正的错误原因埋在一堆噪音下面。
+const RAW = path.join(ROOT, 'raw');
+await mkdir(RAW, { recursive: true });
+
 // ---- 1. 壳页：提取权威章节列表与数据版本号 ----
 console.log('fetching shell page ...');
 const html = await get(`${BASE}/handout.html`);
-await writeFile(path.join(ROOT, 'raw', 'handout.html'), html, 'utf8');
+await writeFile(path.join(RAW, 'handout.html'), html, 'utf8');
 
 const listSrc = html.match(/const\s+chapterList\s*=\s*\[([\s\S]*?)\]\s*;/);
 if (!listSrc) throw new Error('chapterList not found in shell page');
@@ -54,12 +60,12 @@ for (const ch of chapterList) {
   process.stdout.write(`  ch${String(ch.id).padStart(2)} "${ch.title}" ... `);
   const js = await get(url);
   const file = `data-${ch.id}.js`;
-  await writeFile(path.join(ROOT, 'raw', file), js, 'utf8');
+  await writeFile(path.join(RAW, file), js, 'utf8');
   manifest.chapters.push({ id: ch.id, title: ch.title, file, bytes: Buffer.byteLength(js), url });
   console.log(`ok (${Buffer.byteLength(js)} bytes)`);
 }
 
-await writeFile(path.join(ROOT, 'raw', 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+await writeFile(path.join(RAW, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
 
 const total = manifest.chapters.reduce((s, c) => s + c.bytes, 0);
 console.log(`\ndownloaded ${manifest.chapters.length} chapter files, ${total} bytes total`);

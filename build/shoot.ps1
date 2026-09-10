@@ -1,4 +1,10 @@
-# 用无头 Chrome 截 4 张图到 .shots/，供 build/test-site.mjs 的 D / E / G 组回读。
+﻿# 用无头 Chrome 截 4 张图到 .shots/，供 build/test-site.mjs 的 D / E / G 组回读。
+#
+# ⚠ 本文件必须保存为 **UTF-8 with BOM**。
+#   Windows PowerShell 5.1 读取无 BOM 的 .ps1 时按系统 ANSI（中文机为 GBK）解码，
+#   中文字符串字面量的尾字节会吃掉闭合引号，导致 "string is missing the terminator"
+#   之类的解析错误 —— 脚本一行都跑不起来。PowerShell 7 默认 UTF-8，所以只在 5.1 上炸。
+#   改完这个文件后请确认 BOM 还在（EF BB BF）。
 #
 # 为什么验收要靠截图：本机无头 Chrome 的 stdout / stderr 恒为 0 字节，任何
 # console.log 都取不回来。所以 selftest.html / sitetest.html 把每条断言画成

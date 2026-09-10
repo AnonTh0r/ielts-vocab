@@ -1,6 +1,12 @@
 # 统一行尾，避免 Windows/macOS 之间整文件 diff
 * text=auto eol=lf
 
+# CSV 是例外：render.mjs 刻意用 CRLF（Excel 双击直接打开的惯例，见 render.mjs:196）。
+# 若跟着上面的 eol=lf 走，检出的文件与生成器输出会永远差 3569 个 \r（每行一个），
+# 于是每次重新生成都让 git status 变脏。这里显式声明 crlf，使检出结果与生成器一致。
+# 注意：blob 里存的仍是 LF（clean 过滤器会归一化），只有检出时转 CRLF。
+ielts-vocab.csv text eol=crlf
+
 # 二进制与数据文件不做行尾转换
 *.png binary
 *.jpg binary

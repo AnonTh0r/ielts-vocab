@@ -46,6 +46,12 @@ node build/test-site.mjs     # 验收：112 项断言
 词库**不入库也能重建**：`raw/`、`build/normalized.json`、`.shots/` 均已 gitignore，
 克隆后依次跑上面 6 条命令即可从零复原全部数据与验收证据。
 
+> **一处预期内的差异**：`render.mjs` 会把**当天日期**写进 `ielts-vocab.md` 首屏
+> （`> 抓取生成：YYYY-MM-DD　·　22 章　·　3568 条词条…`），用来标记数据的抓取时间。
+> 所以在不同日期重跑必然产生这 1 行 diff——这是设计如此，不是流水线不稳定。
+> 除此之外产物与仓库内已提交版本逐字节一致（`ielts-vocab.tsv`、`site/data/*.js`
+> 均已实测字节相同；`.csv` 的 CRLF 由 `.gitattributes` 显式声明，检出即与生成器一致）。
+
 解析用 `node:vm` 隔离上下文按 JS 语义求值（而非正则硬抠），
 再用正则独立计数交叉校验，两者不一致即报错。
 
