@@ -1,0 +1,138 @@
+{
+  "version": "20260618-1",
+  "source": "https://www.leonwang.cc/ielts-vocab/handout.html",
+  "chapters": [
+    {
+      "id": 1,
+      "title": "时间与存在",
+      "file": "ch1.js",
+      "count": 227
+    },
+    {
+      "id": 2,
+      "title": "植物研究",
+      "file": "ch2.js",
+      "count": 130
+    },
+    {
+      "id": 3,
+      "title": "动物保护",
+      "file": "ch3.js",
+      "count": 168
+    },
+    {
+      "id": 4,
+      "title": "太空探索",
+      "file": "ch4.js",
+      "count": 70
+    },
+    {
+      "id": 5,
+      "title": "学校教育",
+      "file": "ch5.js",
+      "count": 401
+    },
+    {
+      "id": 6,
+      "title": "科技文明",
+      "file": "ch6.js",
+      "count": 122
+    },
+    {
+      "id": 7,
+      "title": "文化历史",
+      "file": "ch7.js",
+      "count": 79
+    },
+    {
+      "id": 8,
+      "title": "语言演化",
+      "file": "ch8.js",
+      "count": 68
+    },
+    {
+      "id": 9,
+      "title": "文化娱乐",
+      "file": "ch9.js",
+      "count": 175
+    },
+    {
+      "id": 10,
+      "title": "物品材料",
+      "file": "ch10.js",
+      "count": 135
+    },
+    {
+      "id": 11,
+      "title": "时尚潮流",
+      "file": "ch11.js",
+      "count": 91
+    },
+    {
+      "id": 12,
+      "title": "饮食健康",
+      "file": "ch12.js",
+      "count": 172
+    },
+    {
+      "id": 13,
+      "title": "建筑场所",
+      "file": "ch13.js",
+      "count": 132
+    },
+    {
+      "id": 14,
+      "title": "交通旅行",
+      "file": "ch14.js",
+      "count": 139
+    },
+    {
+      "id": 15,
+      "title": "国家政府",
+      "file": "ch15.js",
+      "count": 135
+    },
+    {
+      "id": 16,
+      "title": "社会经济",
+      "file": "ch16.js",
+      "count": 171
+    },
+    {
+      "id": 17,
+      "title": "法律法规",
+      "file": "ch17.js",
+      "count": 101
+    },
+    {
+      "id": 18,
+      "title": "沙场争锋",
+      "file": "ch18.js",
+      "count": 186
+    },
+    {
+      "id": 19,
+      "title": "社会角色",
+      "file": "ch19.js",
+      "count": 124
+    },
+    {
+      "id": 20,
+      "title": "行为动作",
+      "file": "ch20.js",
+      "count": 268
+    },
+    {
+      "id": 21,
+      "title": "身心健康",
+      "file": "ch21.js",
+      "count": 417
+    },
+    {
+      "id": 22,
+      "title": "时间日期",
+      "file": "ch22.js",
+      "count": 57
+    }
+  ]
+}

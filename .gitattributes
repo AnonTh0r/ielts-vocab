@@ -1,0 +1,12 @@
+# 统一行尾，避免 Windows/macOS 之间整文件 diff
+* text=auto eol=lf
+
+# 二进制与数据文件不做行尾转换
+*.png binary
+*.jpg binary
+*.ico binary
+
+# 词库数据体积大且为机器生成，不参与 diff / 合并
+site/data/*.js -diff
+ielts-vocab.csv -diff
+ielts-vocab.tsv -diff

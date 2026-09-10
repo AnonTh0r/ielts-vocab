@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>背单词</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+
+<button class="sidebar-toggle" id="sidebarToggle" title="词汇总览" type="button">📋</button>
+<div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+<aside class="sidebar" id="vocabSidebar">
+  <div class="sidebar-header">
+    <h3>词汇总览</h3>
+    <button type="button" id="sidebarClose">✕ 关闭</button>
+  </div>
+  <input type="text" class="sidebar-search" id="sidebarSearch" placeholder="搜索单词或释义…">
+  <div class="sidebar-list" id="sidebarList"></div>
+</aside>
+
+<main class="container">
+  <h1>📘 雅思核心词汇 · 拼写训练</h1>
+
+  <div class="top-controls">
+    <select id="chapterSelect" title="选择章节"></select>
+    <div class="mode-group" id="modeGroup">
+      <button class="mode-btn" type="button" data-mode="chinese">📖 看中文</button>
+      <button class="mode-btn" type="button" data-mode="audio">🔊 听音</button>
+      <button class="mode-btn active" type="button" data-mode="random">🎲 随机</button>
+    </div>
+    <div class="user-panel">
+      <span>👤</span>
+      <select id="userSelect" title="切换用户"></select>
+      <button type="button" id="addUserBtn">新增</button>
+    </div>
+  </div>
+
+  <div class="top-controls">
+    <div class="tool-group">
+      <button id="hintToggle" class="tool-btn" type="button" title="预填首字母">💡 提示</button>
+      <button id="timerToggle" class="tool-btn" type="button" title="限时作答">⏱️ 计时</button>
+    </div>
+    <div class="goal-progress" id="goalDisplay">
+      <span>🎯 每日目标</span>
+      <span id="goalCount">0/50</span>
+      <div class="goal-bar"><div class="goal-fill" id="goalFill"></div></div>
+      <button type="button" id="setGoalBtn" title="设置目标">⚙️</button>
+    </div>
+    <div class="mode-indicator" id="timerDisplay" style="display:none;">
+      <span>⏳ 剩余</span><span class="timer-display" id="timerSeconds">10</span><span>秒</span>
+    </div>
+  </div>
+
+  <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+
+  <div class="stats">
+    <span>📊 进度 <strong id="progressText">0/0</strong></span>
+    <span>✅ 正确 <strong id="correctCount">0</strong></span>
+    <span>❌ 错误 <strong id="wrongCount">0</strong></span>
+  </div>
+
+  <div class="mode-indicator">
+    <span id="modeIcon">📖</span> <span id="modeText">准备开始</span>
+    <span class="speech-status" id="speechStatus"></span>
+  </div>
+
+  <div class="chinese-meaning" id="chineseDisplay" aria-live="polite"></div>
+  <div class="letter-slots" id="letterSlots"></div>
+
+  <input type="text" class="native-answer-input" id="answerInput"
+         inputmode="text" autocomplete="off" autocorrect="off"
+         autocapitalize="none" spellcheck="false"
+         aria-label="输入单词拼写" placeholder="输入单词">
+
+  <div class="result-area" id="resultArea" aria-live="polite"></div>
+
+  <div class="example-box" id="exampleBox">
+    <span class="en" id="exampleEN"></span>
+    <span class="cn" id="exampleCN"></span>
+  </div>
+
+  <div class="actions">
+    <button id="addNewWordBtn" type="button" title="加入生词本">📌 生词</button>
+    <button id="skipBtn" type="button" title="跳过（会计入错题本）">⏭️ 跳过</button>
+    <button id="restartBtn" type="button" title="重新开始本章（清空本轮成绩）">🔄 重新开始</button>
+    <button id="repeatBtn" type="button" title="再读一次">🔊 再读</button>
+    <button id="nextBtn" class="primary" type="button">⏎ 提交 / 下一题</button>
+  </div>
+
+  <div class="book-row">
+    <div class="book-panel">
+      <div class="book-header" id="wrongBookToggle">
+        <h3>📕 错题本 (<span id="wrongBookCount">0</span>)</h3><span>▼</span>
+      </div>
+      <div class="book-list" id="wrongList"></div>
+      <button type="button" id="clearWrongBtn" style="margin-top:6px;font-size:0.75rem;">清空</button>
+    </div>
+    <div class="book-panel">
+      <div class="book-header" id="newWordBookToggle">
+        <h3>📗 生词本 (<span id="newWordCount">0</span>)</h3><span>▼</span>
+      </div>
+      <div class="book-list" id="newWordList"></div>
+      <button type="button" id="clearNewWordsBtn" style="margin-top:6px;font-size:0.75rem;">清空</button>
+    </div>
+  </div>
+  <button id="reviewBookBtn" class="primary" type="button" style="align-self:center;">📚 复习错题 + 生词</button>
+
+  <section class="heatmap-panel" id="heatmapPanel" aria-label="学习日历">
+    <div class="heatmap-head">
+      <h3>📅 学习日历</h3>
+      <div class="heatmap-stats" id="heatmapStats"></div>
+    </div>
+    <div class="heatmap-scroll">
+      <div class="heatmap-months" id="heatmapMonths"></div>
+      <div class="heatmap-body">
+        <div class="heatmap-weekdays" id="heatmapWeekdays"></div>
+        <div class="heatmap-grid" id="heatmapGrid" role="img"></div>
+      </div>
+    </div>
+    <div class="heatmap-legend" id="heatmapLegend"></div>
+  </section>
+</main>
+
+<div id="modalHost"></div>
+
+<script src="assets/core.js"></script>
+<script src="assets/quiz.js"></script>
+</body>
+</html>

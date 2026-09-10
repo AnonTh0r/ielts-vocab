@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>页面启动自检</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #05070d; }
+  #leds { position: absolute; left: 0; top: 0; }
+  .led { position: absolute; top: 0; width: 40px; height: 40px; background: #05070d; }
+  .led.pass { background: #00e676; }
+  .led.fail { background: #ff1744; }
+  .led.sync { background: #ffffff; }
+  .led.end  { background: #2979ff; }
+  #report { position: absolute; left: 0; top: 52px; width: 1100px;
+            font: 12px/1.5 monospace; color: #cfd8dc; white-space: pre-wrap; }
+  iframe { position: absolute; left: -99999px; top: 0; width: 1200px; height: 1200px;
+           visibility: hidden; }
+</style>
+</head>
+<body>
+<div id="leds"></div>
+<div id="report">waiting for iframes…</div>
+<iframe id="fQuiz" src="index.html"></iframe>
+<iframe id="fBrowse" src="handout.html"></iframe>
+
+<script>
+/* ---------------------------------------------------------------------
+   用 iframe 真实加载 index.html / handout.html，读取页面自己埋的启动标记。
+   必须用 --allow-file-access-from-files 启动，否则跨 file 源读取会抛 SecurityError。
+   这是"整页能否启动"的最终证据，selftest.html 只覆盖了 core.js。
+   --------------------------------------------------------------------- */
+(function () {
+  const deadline = Date.now() + 8000;
+  const done = () => {
+    const r = [];
+    const rec = (n, v, extra) => r.push({ n, v: !!v, extra: extra || '' });
+
+    const fq = document.getElementById('fQuiz');
+    const fb = document.getElementById('fBrowse');
+    let qe = null, be = null;
+    try { qe = fq.contentWindow; } catch (e) { rec('index.html 可脚本访问', false, e.name); }
+    try { be = fb.contentWindow; } catch (e) { rec('handout.html 可脚本访问', false, e.name); }
+    if (!qe || !be) { render(r); return; }
+
+    let qDoc = null, bDoc = null;
+    try { qDoc = qe.document; bDoc = be.document; } catch (e) { /* 下面各自断言 */ }
+
+    rec('index.html 文档就绪', qDoc && qDoc.readyState === 'complete');
+    rec('quiz.js 已执行到 boot 末尾', !!(qe && qe.__QUIZ_READY));
+    rec('quiz 已出第一题', !!(qe && qe.__QUIZ_STARTED));
+    const slots = qe && qe.__QUIZ_SLOT_COUNT;
+    rec('quiz 槽位数 > 0', typeof slots === 'number' && slots > 0, 'slots=' + slots);
+    const chapterOpts = qDoc ? qDoc.querySelectorAll('#chapterSelect option').length : 0;
+    rec('章节下拉已填充 22 项', chapterOpts === 22, 'options=' + chapterOpts);
+    const renderedSlots = qDoc ? qDoc.querySelectorAll('#letterSlots .slot').length : 0;
+    rec('槽位 DOM 已渲染', renderedSlots > 0, 'div.slot=' + renderedSlots);
+
+    rec('handout.html 文档就绪', bDoc && bDoc.readyState === 'complete');
+    rec('browse.js 已渲染卡片', !!(be && be.__BROWSE_READY));
+    const cards = be && be.__BROWSE_CARDS;
+    rec('卡片数 === 第 1 章词数 227', cards === 227, 'cards=' + cards);
+    rec('手册页无未捕获异常', be && (be.__PAGE_ERRORS || []).length === 0,
+        be && be.__PAGE_ERRORS && be.__PAGE_ERRORS.length ? be.__PAGE_ERRORS.join(' | ') : '');
+
+    // ---- 学习日历（GitHub 式提交墙）----
+    const grid = qDoc.getElementById('heatmapGrid');
+    const cols = grid ? [...grid.querySelectorAll('.hm-col')] : [];
+    const cells = grid ? [...grid.querySelectorAll('.hm-cell')] : [];
+    rec('日历已渲染且格子数是 7 的倍数', cells.length > 0 && cells.length % 7 === 0, 'cells=' + cells.length);
+    rec('日历列数 >= 53（覆盖最近一年）', cols.length >= 53, 'cols=' + cols.length);
+    rec('每列恰好 7 格（周日..周六）',
+        cols.length > 0 && cols.every(c => c.querySelectorAll('.hm-cell').length === 7));
+    const todayCell = grid ? grid.querySelector('.hm-cell.today') : null;
+    rec('今天的格子被标记且仅一个',
+        !!todayCell && grid.querySelectorAll('.hm-cell.today').length === 1);
+    // 确定性不变量：占位/未来格没有 title，正常格一定有 title（两者互斥）
+    rec('占位格与正常格的 title 互斥',
+        cells.every(c => c.title ? !c.classList.contains('blank') : c.classList.contains('blank')));
+    rec('今天的格子非占位', !!todayCell && !todayCell.classList.contains('blank'));
+    rec('月份标签与列数一致',
+        qDoc.querySelectorAll('#heatmapMonths .hm-month').length === cols.length,
+        'labels=' + qDoc.querySelectorAll('#heatmapMonths .hm-month').length);
+    rec('星期标签 7 行且只标 一/三/五', (() => {
+      const w = [...qDoc.querySelectorAll('#heatmapWeekdays .hm-wd')].map(x => x.textContent);
+      return w.length === 7 && w[0] === '' && w[1] === '一' && w[3] === '三' && w[5] === '五' && w[6] === '';
+    })());
+    rec('统计行已填充', /累计答对/.test((qDoc.getElementById('heatmapStats') || {}).textContent || ''));
+    rec('图例为 5 级绿阶', qDoc.querySelectorAll('#heatmapLegend .hm-cell').length === 5);
+    rec('格子 title 含日期与词数', /答对 \d+ 词/.test((todayCell && todayCell.title) || ''),
+        (todayCell && todayCell.title) || '');
+    // class 挂上 != 样式生效（.container 基础规则缺失就是这么漏掉的），
+    // 因此直接读浏览器算出来的颜色。
+    const gv = el => el ? qe.getComputedStyle(el) : null;
+    const panelBg = gv(qDoc.getElementById('heatmapPanel')) && gv(qDoc.getElementById('heatmapPanel')).backgroundColor;
+    rec('日历面板有底色（非透明）', !!panelBg && panelBg !== 'rgba(0, 0, 0, 0)' && panelBg !== 'transparent', panelBg);
+    const cellSize = gv(cells[0]) && gv(cells[0]).width;
+    rec('格子有实际尺寸（非 0px）', !!cellSize && parseFloat(cellSize) > 0, cellSize);
+
+    // ---- 键盘行为回归 ----
+    // 曾因把 r/s/h/t/p/n/空格 绑成快捷键，导致这些字母无法输入、
+    // 且空格被劫持为"跳过"，词组（carbon dioxide）永远拼不出来。
+    const kd = key => qDoc.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    const dbg = () => qe.__QUIZ_DEBUG && qe.__QUIZ_DEBUG();
+    rec('quiz 暴露 __QUIZ_DEBUG 钩子', !!dbg());
+    if (dbg()) {
+      for (let i = 0; i < 40 && dbg().typed.length; i++) kd('Backspace');
+      const base = dbg();
+      rec('Backspace 能清空缓冲', base.typed === '', 'typed="' + base.typed + '"');
+
+      kd('r'); kd('s'); kd(' ');
+      const after = dbg();
+      rec('按 r/s/空格 进入拼写缓冲而非触发命令',
+          after.typed === 'rs ' && after.word === base.word,
+          'typed="' + after.typed + '" word=' + after.word);
+      rec('按 s 不打开词表抽屉',
+          !qDoc.getElementById('vocabSidebar').classList.contains('open'));
+      rec('按 r 不重开本轮（当前词与成绩未变）',
+          after.completed === base.completed && after.word === base.word);
+      rec('按 r/s/h/t/p/n 不改提示与计时开关',
+          !qDoc.getElementById('hintToggle').classList.contains('active') &&
+          !qDoc.getElementById('timerToggle').classList.contains('active'));
+
+      // 端到端：清空后逐键敲完整单词再回车，必须判"正确"
+      for (let i = 0; i < 40 && dbg().typed.length; i++) kd('Backspace');
+      const word = after.word;
+      for (const ch of word) kd(ch);
+      rec('逐键敲完整单词后缓冲长度等于目标词',
+          dbg().typed.length === word.length, 'typed="' + dbg().typed + '"');
+      kd('Enter');
+      const res = (qDoc.getElementById('resultArea') || {}).textContent || '';
+      rec('回车提交 → 判定正确（大小写/空格/连字符归一后全等）',
+          /正确/.test(res) && dbg().isAnswered, res.trim().slice(0, 40));
+      rec('提交后完成数 +1', dbg().completed === base.completed + 1, 'completed=' + dbg().completed);
+
+      // 答对一题后，日历上今天的格子必须立刻变绿并计入统计
+      const dayAfter = dbg().dayCount;
+      rec('答对后当日累计 +1', dayAfter === base.dayCount + 1,
+          base.dayCount + ' -> ' + dayAfter);
+      const tc = qDoc.querySelector('#heatmapGrid .hm-cell.today');
+      rec('今天的格子上色为 lv1+（越背越绿）',
+          !!tc && !tc.classList.contains('lv0') && !tc.classList.contains('blank'),
+          tc ? tc.className : 'no-cell');
+      const tcBg = tc ? qe.getComputedStyle(tc).backgroundColor : '';
+      rec('今天的格子计算色为绿系（--correct #34d399）',
+          /rgba?\(\s*52,\s*211,\s*153/.test(tcBg), tcBg);
+      rec('今天的格子 title 反映新计数',
+          !!tc && new RegExp('答对 ' + dayAfter + ' 词').test(tc.title || ''), tc ? tc.title : '');
+      rec('统计行累计数已重算',
+          /累计答对\s*\d+/.test((qDoc.getElementById('heatmapStats') || {}).textContent || '') &&
+          /当前连续\s*\d+/.test((qDoc.getElementById('heatmapStats') || {}).textContent || ''));
+    }
+
+    // 放在最后，确保也覆盖键盘模拟过程中可能抛出的异常
+    rec('背单词页全程无未捕获异常', qe && qDoc && (qe.__PAGE_ERRORS || []).length === 0,
+        qe && qe.__PAGE_ERRORS && qe.__PAGE_ERRORS.length ? qe.__PAGE_ERRORS.join(' | ') : '');
+
+    render(r);
+  };
+
+  function render(results) {
+    const cells = [{ c: 'sync' }]
+      .concat(results.map(x => ({ c: x.v ? 'pass' : 'fail' })))
+      .concat([{ c: 'end' }]);
+    document.getElementById('leds').innerHTML = cells.map((x, i) =>
+      `<div class="led ${x.c}" style="left:${i * 40}px"></div>`).join('');
+    document.getElementById('report').textContent =
+      results.map((x, i) => `${i + 1}. ${x.v ? 'PASS' : 'FAIL'}  ${x.n}${x.extra ? '  [' + x.extra + ']' : ''}`).join('\n') +
+      `\n\n${results.filter(x => x.v).length}/${results.length} passed`;
+    document.title = results.every(x => x.v) ? 'ALL-PASS' : 'HAS-FAIL';
+  }
+
+  (function poll() {
+    const qReady = (() => { try { return document.getElementById('fQuiz').contentWindow.document.readyState === 'complete'; } catch (e) { return true; } })();
+    const bReady = (() => { try { return document.getElementById('fBrowse').contentWindow.document.readyState === 'complete'; } catch (e) { return true; } })();
+    if ((qReady && bReady) || Date.now() > deadline) setTimeout(done, 300);
+    else setTimeout(poll, 120);
+  })();
+})();
+</script>
+</body>
+</html>

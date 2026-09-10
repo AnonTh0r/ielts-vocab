@@ -1,0 +1,7 @@
+# 本地只用于验证的产物，不进版本库
+.chrome-profile/
+.shots/
+
+# 抓取与编译中间产物
+raw/
+build/normalized.json

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>file:// 自检</title>
+<link rel="stylesheet" href="assets/app.css">
+<style>
+  /* 自检页专用：不依赖主题，用绝对坐标保证像素采样稳定 */
+  html, body { margin: 0; padding: 0; background: #05070d !important; }
+  #leds { position: absolute; left: 0; top: 0; }
+  .led { position: absolute; top: 0; width: 40px; height: 40px; background: #05070d; }
+  .led.pass { background: #00e676; }
+  .led.fail { background: #ff1744; }
+  .led.sync { background: #ffffff; }
+  .led.end  { background: #2979ff; }
+  #report { position: absolute; left: 0; top: 52px; width: 1000px;
+            font: 12px/1.5 monospace; color: #cfd8dc; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="leds"></div>
+<div id="report">running…</div>
+
+<script src="assets/core.js"></script>
+<script>
+/* ---------------------------------------------------------------------
+   本页只验证一件事：本站在 file:// 下的真实运行能力。
+   结果以 LED 像素条输出（绿=通过 / 红=失败 / 底色=脚本未跑完），
+   因为无头 Chrome 的 stdout 在当前环境不可回读，像素是唯一可靠信道。
+   --------------------------------------------------------------------- */
+(function () {
+  const results = [];
+  const record = (name, pass) => results.push({ name, pass: !!pass });
+
+  try {
+    record('core.js 已加载并导出 VocabCore', !!(window.VocabCore && VocabCore.judge));
+
+    // 判题在真实浏览器里的行为
+    record('normalize 折叠 Unicode 破折号', VocabCore.normalize('high\u2011tech') === 'high-tech');
+    record('judge 严格全等：大小写不敏感', VocabCore.judge('Atmosphere', 'atmosphere').status === 'correct');
+    record('judge 长度闸门：缺字母判 short', VocabCore.judge('atmospher', 'atmosphere').status === 'short');
+
+    // app.css 是否真的在 file:// 下生效（暗色底色应为 rgb(9,14,26)）
+    const bg = getComputedStyle(document.body).backgroundColor;
+    record('app.css 已应用', bg !== 'rgba(0, 0, 0, 0)' && bg !== 'rgb(255, 255, 255)', );
+    record('底色为暗色', /rgb\(\s*(?:[0-9]|[1-9][0-9]),\s*(?:[0-9]|[1-9][0-9]),\s*(?:[0-9]|[1-9][0-9])\)/.test(bg));
+    results[results.length - 2].name += ` (${bg})`;
+
+    // localStorage 在 file:// 下是否可用
+    let lsOk = false;
+    try {
+      localStorage.setItem('__probe', '1');
+      lsOk = localStorage.getItem('__probe') === '1';
+      localStorage.removeItem('__probe');
+    } catch (e) { lsOk = false; }
+    record('localStorage 可用（进度可保存）', lsOk);
+
+    // 关键：动态 <script> 注入加载词库（原站同款做法，file:// 下必须成立）
+    VocabCore.loadChapter(4).then(data => {
+      record('script 注入加载 data/ch4.js 成功', !!data && data.words.length === 70);
+      record('词条带全局键 ch4:{id}',
+        !!data && data.words[0].gk === 'ch4:1' && data.words[69].gk === 'ch4:70');
+      record('词条字段完整',
+        !!(data && data.words[0].word && data.words[0].meaning && data.words[0].tag));
+
+      // 缓存命中：第二次加载不应再注入 script
+      const before = document.querySelectorAll('script[data-chapter]').length;
+      VocabCore.loadChapter(4).then(() => {
+        record('重复加载走内存缓存', document.querySelectorAll('script[data-chapter]').length === before);
+
+        // 出题-作答全链路：挑一个词，喂对/喂错
+        const w = data.words.find(x => x.word === 'orbit') || data.words[0];
+        record('全链路答对', VocabCore.judge(VocabCore.normalize(w.word), w.word).status === 'correct');
+        record('全链路答错', VocabCore.judge(
+          VocabCore.normalize(w.word).slice(0, -1) + 'z', w.word).status === 'wrong');
+
+        render();
+      });
+    }).catch(err => {
+      record('script 注入加载 data/ch4.js 成功: ' + err.message, false);
+      render();
+    });
+
+    record('speechSynthesis 接口存在（离线朗读）', 'speechSynthesis' in window);
+  } catch (e) {
+    record('未捕获异常: ' + e.message, false);
+    render();
+  }
+
+  function render() {
+    // 布局：[白 SYNC][断言1..n][蓝 END]，每格 40x40
+    //   白=对齐/像素密度基准，蓝=终止符（读不到说明脚本没跑完）
+    const cells = [{ cls: 'sync' }].concat(
+      results.map(r => ({ cls: r.pass ? 'pass' : 'fail' })),
+      [{ cls: 'end' }]
+    );
+    const host = document.getElementById('leds');
+    host.innerHTML = cells.map((c, i) =>
+      `<div class="led ${c.cls}" style="left:${i * 40}px"></div>`).join('');
+    document.getElementById('report').textContent =
+      results.map((r, i) => `${i + 1}. ${r.pass ? 'PASS' : 'FAIL'}  ${r.name}`).join('\n') +
+      `\n\n${results.filter(r => r.pass).length}/${results.length} passed`;
+    document.title = results.every(r => r.pass) ? 'ALL-PASS' : 'HAS-FAIL';
+  }
+})();
+</script>
+</body>
+</html>

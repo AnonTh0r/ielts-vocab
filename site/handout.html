@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>词汇手册</title>
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body class="browse">
+
+<a class="page-switch" href="index.html">📖 去背单词</a>
+
+<nav class="browse-sidebar" id="chapterNav" aria-label="章节导航">
+  <h2>章节</h2>
+</nav>
+
+<main class="browse-main">
+  <h1 id="chapterTitle">加载中…</h1>
+  <p class="browse-meta" id="chapterMeta"></p>
+  <div class="card-grid" id="cardGrid"></div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="overlay-content" id="overlayContent"></div>
+</div>
+
+<script src="assets/core.js"></script>
+<script src="assets/browse.js"></script>
+</body>
+</html>
