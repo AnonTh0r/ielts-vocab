@@ -211,7 +211,7 @@ console.log('\n=== A2. 学习日历内核（TZ 钉死 Asia/Shanghai）===');
 // ==================== B. 静态完整性 ====================
 console.log('\n=== B. 静态完整性 ===');
 const pages = [
-  { html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/quiz.js'] },
+  { html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/flash.js'] },
   { html: 'site/handout.html', js: ['site/assets/core.js', 'site/assets/browse.js'] },
 ];
 const allSrc = [];
@@ -512,7 +512,7 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 // ==================== F. 语法解析（含此前未覆盖的 quiz.js / browse.js）====================
 console.log('\n=== F. JS 语法解析 ===');
 {
-  const jsFiles = ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js'];
+  const jsFiles = ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js'];
   for (const f of jsFiles) {
     const src = await readFile(path.join(ROOT, f), 'utf8');
     try { new vm.Script(src, { filename: f }); ok(`${f} 语法正确`, true, `${(src.length / 1024).toFixed(1)} KB`); }
