@@ -5,6 +5,34 @@
    以暗色为第一性设计：更深的底色、分层辉光、半透明面板、低饱和描边。
    ===================================================================== */
 
+.flash-dialog { position: fixed; inset: 0; margin: auto; width: min(680px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 28px; border: 1px solid var(--border-strong); border-radius: 28px; background: var(--card-bg); color: var(--text); box-shadow: var(--shadow); overflow: auto; }
+.flash-dialog::backdrop { background: rgba(3, 7, 18, .8); backdrop-filter: blur(8px); }
+.flash-header, .flash-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.flash-header { margin-bottom: 22px; }
+.flash-eyebrow { color: var(--accent); font-size: .9rem; letter-spacing: .06em; }
+.flash-meta { color: var(--text-secondary); font-size: .875rem; }
+.flash-content { padding: 24px 0; min-height: 260px; }
+.flash-content h2 { margin: 0 0 8px; font-size: clamp(2rem, 6vw, 3rem); line-height: 1.2; overflow-wrap: anywhere; }
+.flash-phonetic { color: var(--text-secondary); font-size: 1rem; }
+.flash-phonetic span { margin-left: 12px; }
+.flash-meaning { font-size: 1.25rem; line-height: 1.6; margin: 22px 0; }
+.flash-example { margin: 0; padding: 4px 18px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 12px 12px 0; }
+.flash-example p { font-size: 1rem; line-height: 1.7; margin: 10px 0; }
+.flash-example p + p, .flash-extra { color: var(--text-secondary); }
+.flash-extra { font-size: .9rem; line-height: 1.7; }
+.flash-footer { position: sticky; bottom: -28px; background: var(--card-bg); padding: 16px 0 4px; }
+.flash-progress { display: block; width: 100%; height: 6px; margin: 12px 0 22px; border: 0; border-radius: 10px; overflow: hidden; background: var(--elevated); accent-color: var(--accent); }
+.flash-progress::-webkit-progress-bar { background: var(--elevated); }
+.flash-progress::-webkit-progress-value { background: var(--grad); border-radius: 10px; }
+.flash-progress::-moz-progress-bar { background: var(--grad); }
+.flash-actions { display: flex; gap: 12px; }
+.flash-actions button { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center; padding: 14px 8px; font-size: 1rem; }
+.flash-actions small { display: block; margin: 0; font-size: .875rem; opacity: .75; }
+.flash-known { color: var(--correct); border-color: var(--correct); }
+.flash-new { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.flash-unsure { color: var(--warn); border-color: var(--warn); }
+.flash-summary { text-align: center; padding: 28px 0; }
+.flash-summary p { margin: 20px 0 28px; color: var(--text-secondary); }
 :root {
   /* ---- 底色：三段渐进，避免死黑 ---- */
   --bg: #090e1a;

@@ -51,6 +51,9 @@
   let wrongBook = [], newWordBook = [];   // 存完整词对象，键为 gk
   let reviewPool = null;                  // 非空表示正在复习错题/生词
   let lastResult = null;
+  let flashActive = false;
+  let newWordRetry = false, replaceRevealed = false;
+  const flashOffsets = new Map(); // 每个用户、章节独立推进；取消不消耗本组
 
   const MOBILE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const MASTERY_TO_CLEAR = 2; // 错题需连对 N 次才移出错题本
@@ -181,6 +184,7 @@
     currentIndex = currentIndex % shuffledWords.length;
     currentWord = shuffledWords[currentIndex];
     typed = ''; isAnswered = false; lastResult = null;
+    newWordRetry = false; replaceRevealed = false;
     resultArea.innerHTML = '';
     exampleBox.style.display = 'none';
 
@@ -241,9 +245,10 @@
   // 逐键写缓冲：用 loose()（不 trim），否则空格会被丢掉，"carbon dioxide" 拼不出来。
   // 空格 / 连字符必须原样进入缓冲，trim 与空白折叠只在提交判定时做（同原站）。
   function acceptChar(raw) {
-    if (!currentWord || isAnswered) return;
+    if (!currentWord || (isAnswered && !newWordRetry)) return;
     const ch = C.loose(raw);
     if (!ch) return;                                   // 白名单外字符直接吞掉
+    beginNewWordRetry();
     const cap = prep(currentWord).cells.length;
     if (typed.length >= cap) return;                   // 长度硬上限（同原站 maxLength）
     typed += ch;
@@ -251,7 +256,8 @@
   }
 
   function deleteChar() {
-    if (!currentWord || isAnswered) return;
+    if (!currentWord || (isAnswered && !newWordRetry)) return;
+    if (replaceRevealed) { beginNewWordRetry(); syncInput(); renderSlots(); return; }
     const floor = hintEnabled ? 1 : 0;
     if (typed.length <= floor) return;
     typed = typed.slice(0, -1);
@@ -261,6 +267,7 @@
   // 手机 IME / 粘贴：以 input 为准，但提示开启时首字母锁定（修正原站正则注入缺陷 3）
   function adoptExternal(value) {
     if (!currentWord) { typed = ''; return; }
+    beginNewWordRetry();
     const cap = prep(currentWord).cells.length;
     // 用 loose() 而非 normalize()：手机 IME 逐字符触发 input，
     // 若在此处 trim，"carbon " 的尾空格会被抹掉，后续输入就拼回 "carbondioxide"。
@@ -286,6 +293,17 @@
     isAnswered = true;
     lastResult = r;
     answerInput.disabled = true;
+    if (newWordRetry) {
+      // 本题在点“生词”时已经计错；重拼只用于巩固，不再次计分。
+      resultArea.textContent = r.status === 'correct'
+        ? '✔️ 重拼正确，仍保留在生词本中。'
+        : `❌ 仍需巩固，正确拼写：${currentWord.word}。可继续重拼。`;
+      answerInput.disabled = false;
+      replaceRevealed = true;
+      renderSlots(); syncInput();
+      if (MOBILE) { answerInput.focus(); answerInput.select(); }
+      return;
+    }
     completedCount++;
 
     if (r.status === 'correct') {
@@ -380,6 +398,32 @@
       newWordBook.push({ ...currentWord });
       updateBookUI(); saveState(); updateSidebar();
     }
+    if (isAnswered && !newWordRetry) return;
+    clearInterval(timerInterval);
+    if (!newWordRetry) {
+      wrongTotal++; completedCount++;
+      addToWrongBook(currentWord);
+      bumpMastery(currentWord.gk, -99);
+      C.playWrong();
+    }
+    newWordRetry = true; replaceRevealed = true; isAnswered = true;
+    typed = prep(currentWord).target;
+    lastResult = { status: 'wrong', cellStates: targetCells().map(() => 'wrong') };
+    answerInput.disabled = false;
+    resultArea.textContent = '已计为答错并加入生词本。直接输入可重新拼写，回车进入下一词。';
+    syncInput(); renderSlots(); showExample(); C.speak(currentWord.word);
+    updateBookUI(); updateStats(); saveState(); updateSidebar();
+    if (MOBILE) { answerInput.focus(); answerInput.select(); }
+    else if (document.activeElement) document.activeElement.blur();
+  }
+
+  function beginNewWordRetry() {
+    if (!newWordRetry) return;
+    if (replaceRevealed) {
+      typed = ''; replaceRevealed = false;
+      lastResult = null; isAnswered = false;
+      resultArea.textContent = '重新拼写中 · 本题已计错，单词保留在生词本。';
+    }
   }
 
   function chipHTML(w, kind) {
@@ -468,6 +512,7 @@
     timerSeconds.textContent = remaining;
     timerSeconds.classList.remove('urgent');
     timerInterval = setInterval(() => {
+      if (flashActive) return;
       remaining--;
       timerSeconds.textContent = remaining;
       if (remaining <= 3) timerSeconds.classList.add('urgent');
@@ -689,6 +734,27 @@
 
   // ---------- 事件绑定 ----------
   function bindEvents() {
+    $('flashStudyBtn').addEventListener('click', () => {
+      if (flashActive || !currentVocabulary.length) return;
+      const key = `${activeUserId}:${currentChapter}`;
+      const offset = flashOffsets.get(key) || 0;
+      const batch = currentVocabulary.slice(offset, offset + 10);
+      flashActive = true;
+      window.VocabFlash.open(batch, {
+        chapter: currentChapter,
+        onClose: () => { flashActive = false; },
+        onComplete: pool => {
+          flashActive = false;
+          flashOffsets.set(key, offset + batch.length >= currentVocabulary.length ? 0 : offset + batch.length);
+          if (pool.length) {
+            resetAndStart(pool);
+            // 返回桌面拼写通道，避免 Enter 再次激活入口按钮。
+            if (!MOBILE && document.activeElement) document.activeElement.blur();
+          }
+        },
+        onNext: () => $('flashStudyBtn').click(),
+      });
+    });
     document.querySelectorAll('.mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         globalMode = btn.dataset.mode;
@@ -747,7 +813,7 @@
     letterSlots.addEventListener('click', () => { if (!isAnswered && MOBILE) answerInput.focus(); });
 
     // 通道 B：原生 input（手机 IME / 粘贴）
-    answerInput.addEventListener('input', () => { if (!isAnswered) adoptExternal(answerInput.value); });
+    answerInput.addEventListener('input', () => { if (!isAnswered || newWordRetry) adoptExternal(answerInput.value); });
     answerInput.addEventListener('keydown', e => {
       if (e.key === 'Enter') { e.preventDefault(); isAnswered ? moveToNextWord() : submitAnswer(); }
     });
@@ -759,6 +825,7 @@
     // 不设任何字母快捷键 —— 拼写是本页唯一主交互，任何字母劫持都会直接打断输入
     // （曾因 r/s 被劫持为"重开/词表"导致无法输入，见 README 修复记录）。
     document.addEventListener('keydown', e => {
+      if (flashActive) return;
       if (modalHost.childElementCount) {           // 弹窗打开时不抢键
         if (e.key === 'Escape') modalHost.lastElementChild.remove();
         return;
@@ -771,7 +838,7 @@
       if (e.key === 'Escape') { if (sidebar.classList.contains('open')) closeSidebar(); return; }
       if (sidebar.classList.contains('open')) return;   // 侧栏浏览中不向答题区写字母
       if (e.key === 'Backspace') { e.preventDefault(); deleteChar(); return; }
-      if (isAnswered) return;
+      if (isAnswered && !newWordRetry) return;
       if (/^[a-zA-Z\-\s]$/.test(e.key)) { e.preventDefault(); acceptChar(e.key); }
     });
 
