@@ -8,6 +8,11 @@
   'use strict';
   const C = window.VocabCore, B = window.VocabBooks;
   const esc = B.esc;
+  const isChoice = document.body.dataset.practice === 'choice';
+  const stateKey = (uid, book = B.active) => B.stateKey(uid, book) + (isChoice ? ':choice' : '');
+  const queueKey = uid => B.queueKey(uid) + (isChoice ? ':choice' : '');
+  let choicePool = [], choiceOptions = [], choiceSelected = -1, knownWords = [], knownTotal = 0;
+
   let flashSessions = {}, persistedQueue = null, trainingKind = 'chapter';
   let restoring = true, flashSession = null, navigating = false, viewing = false, suspended = null;
 
@@ -84,7 +89,7 @@
     renderUsers();
     $('bookSelect').innerHTML = B.list().map(b => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('');
     $('bookSelect').value = B.active;
-    $('studyTitle').textContent = '📘 ' + B.current().name + ' · 拼写训练';
+    $('studyTitle').textContent = '📘 ' + B.current().name + (isChoice ? ' · 选词练习' : ' · 拼写训练');
 
     chapterSelect.innerHTML = C.CHAPTERS.map(c =>
       `<option value="${c.id}">第 ${c.id} 章 · ${esc(c.title)}</option>`).join('');
@@ -178,6 +183,7 @@
     trainingKind = pool ? (o.kind || 'review') : 'chapter';
     shuffledWords = pool ? C.shuffle(pool) : C.shuffle(currentVocabulary);
     currentIndex = 0; correctTotal = 0; wrongTotal = 0; completedCount = 0;
+    knownTotal = 0;
     // 重开章节只清本词书错题，绝不清空全局生词本。
     if (!pool && o.clearBooks !== false) { wrongBook = []; }
     updateBookUI(); updateSidebar();
@@ -186,6 +192,9 @@
   }
 
   function renderIdle() {
+    currentWord = null; isAnswered = false;
+    if (isChoice) { choiceOptions = []; $('choiceOptions').replaceChildren(); }
+    resultArea.textContent = ''; exampleBox.style.display = 'none';
     chineseDisplay.textContent = '词库为空';
     letterSlots.innerHTML = '';
     modeText.textContent = '无可练词汇';
@@ -214,12 +223,17 @@
       chineseDisplay.textContent = currentMode === 'audio' ? '🔊 听音拼写' : '';
       C.speak(currentWord.word);
     }
+    if (isChoice) {
+      chineseDisplay.textContent = currentWord.word;
+      choiceOptions = window.VocabChoice.options(currentWord, choicePool.concat(shuffledWords));
+      choiceSelected = -1;
+    }
     updateModeIndicator();
 
     if (hintEnabled && cells > 0) typed = prep(currentWord).target[0];
     syncInput();
     renderSlots();
-    if (timerEnabled) startTimer();
+    if (timerEnabled && (!isChoice || choiceOptions.length === 4)) startTimer();
     updateStats(); saveState();
     window.__QUIZ_STARTED = true;
     window.__QUIZ_SLOT_COUNT = prep(currentWord).cells.length;
@@ -228,6 +242,7 @@
 
   function updateModeIndicator() {
     if (!currentWord) { modeIcon.textContent = '📖'; modeText.textContent = '准备开始'; return; }
+    if (isChoice) { modeIcon.textContent = '🧩'; modeText.textContent = '选择正确中文释义' + (currentWord.phonetic ? ' · ' + currentWord.phonetic : ''); return; }
     const label = currentMode === 'chinese' ? '看中文拼写' : '听音拼写';
     modeIcon.textContent = currentMode === 'chinese' ? '📖' : '🔊';
     const pos = currentWord.pos ? `　${currentWord.pos}` : '';
@@ -236,6 +251,7 @@
 
   // ---------- 槽位 ----------
   function renderSlots() {
+    if (isChoice) { renderChoices(); return; }
     if (!currentWord) { letterSlots.innerHTML = ''; return; }
     const cells = targetCells();
     const given = typedCells();
@@ -251,6 +267,42 @@
       html += `<div class="${cls}">${shown}</div>`;
     }
     letterSlots.innerHTML = html;
+  }
+
+
+  function renderChoices() {
+    const root = $('choiceOptions');
+    if (!currentWord || viewing) { root.replaceChildren(); return; }
+    chineseDisplay.textContent = currentWord.word;
+    if (choiceOptions.length !== 4) {
+      root.textContent = '当前词书中可用的不同释义不足，无法生成四个选项。请在词书管理中补充词汇，或切换词书、使用拼写练习。';
+      clearInterval(timerInterval); return;
+    }
+    root.innerHTML = choiceOptions.map((meaning, i) => {
+      const correct = isAnswered && meaning === currentWord.meaning;
+      const wrong = isAnswered && i === choiceSelected && !correct;
+      return '<button type="button" class="choice-option' + (correct ? ' correct' : wrong ? ' wrong' : '')
+        + '" data-option="' + i + '"' + (isAnswered ? ' disabled' : '') + '><span class="choice-letter">'
+        + 'ABCD'[i] + '</span><span>' + esc(meaning) + (correct ? ' ✓ 正确答案' : wrong ? ' ✕ 你的选择' : '') + '</span></button>';
+    }).join('');
+  }
+
+  function finishChoice(kind, selected = -1) {
+    if (navigating || restoring || viewing || !currentWord || isAnswered) return;
+    if (kind === 'answer' && (choiceOptions.length !== 4 || !Number.isInteger(selected) || selected < 0 || selected > 3)) return;
+    clearInterval(timerInterval);
+    choiceSelected = selected; isAnswered = true; completedCount++;
+    const correct = kind === 'answer' && choiceOptions[selected] === currentWord.meaning;
+    if (correct) {
+      correctTotal++; rollDateIfNeeded(); incrementDaily(); recordDay(1);
+      C.playCorrect(); bumpMastery(currentWord.gk, 1);
+    } else {
+      wrongTotal++; addToWrongBook(currentWord); bumpMastery(currentWord.gk, -99);
+      unmarkKnown(); C.playWrong();
+    }
+    const label = correct ? '✔️ 正确！' : kind === 'new' ? '📌 已加入生词本并计错。' : kind === 'timeout' ? '⏰ 时间到。' : kind === 'skip' ? '已跳过并记录错题。' : '❌ 选择错误。';
+    resultArea.textContent = label + ' 正确释义：' + currentWord.meaning;
+    renderChoices(); showExample(); updateBookUI(); updateStats(); updateSidebar(); saveState();
   }
 
   // ---------- 输入 ----------
@@ -297,6 +349,7 @@
 
   // ---------- 提交 ----------
   function submitAnswer() {
+    if (isChoice) { if (!isAnswered) resultArea.textContent = '请先选择一个中文释义。'; return; }
     if (navigating || restoring || !currentWord || isAnswered) return;
     const r = C.judge(typed, currentWord.word);
     if (r.status === 'short') {
@@ -354,6 +407,7 @@
   function moveToNextWord() {
     if (viewing) { viewing = false; suspended = null; restore().then(saveState); return; }
     if (!isAnswered) return;
+    if (isChoice && completedCount >= shuffledWords.length) { showReport(); return; }
     currentIndex++;
     if (currentIndex >= shuffledWords.length) {
       shuffledWords = C.shuffle(shuffledWords); currentIndex = 0; completedCount = 0;
@@ -363,6 +417,8 @@
 
   // 跳过：原站不计错、不留痕（缺陷 4）。这里按"未掌握"入错题本，让练习闭环成立。
   function skipWord() {
+    if (isChoice && (navigating || restoring)) return;
+    if (isChoice && !viewing) { if (!isAnswered) finishChoice('skip'); moveToNextWord(); return; }
     if (viewing) { moveToNextWord(); return; }
     if (!currentWord) return;
     clearInterval(timerInterval);
@@ -375,6 +431,7 @@
   }
 
   function handleTimeout() {
+    if (isChoice) { finishChoice('timeout'); return; }
     if (isAnswered || !currentWord) return;
     isAnswered = true;
     lastResult = { status: 'wrong', cellStates: statesFor(typed) };
@@ -394,8 +451,17 @@
   function wrongRecords(w = currentWord) {
     const book = w?.bookId || 'ielts';
     if (book === B.active) return { list: wrongBook, save: list => { wrongBook = list; } };
-    const key = B.stateKey(activeUserId, book), state = C.store.get(key, {}) || {};
+    const key = stateKey(activeUserId, book), state = C.store.get(key, {}) || {};
     return { list: state.wrongBook || [], save: list => C.store.set(key, { ...state, wrongBook: list }) };
+  }
+  function knownRecords(w = currentWord) {
+    const book = w?.bookId || 'ielts';
+    if (book === B.active) return { list: knownWords, save: list => { knownWords = list; } };
+    const key = stateKey(activeUserId, book), state = C.store.get(key, {}) || {};
+    return { list: state.knownWords || [], save: list => C.store.set(key, { ...state, knownWords: list }) };
+  }
+  function unmarkKnown(w = currentWord) {
+    const records = knownRecords(w); records.save(records.list.filter(x => x.gk !== w.gk));
   }
   function addToWrongBook(w) {
     const records = wrongRecords(w);
@@ -418,6 +484,13 @@
   }
 
   function addToNewBook() {
+    if (isChoice) {
+      if (navigating || restoring || viewing || !currentWord) return;
+      if (!inList(newWordBook, currentWord.gk)) newWordBook.push({ ...currentWord });
+      unmarkKnown();
+      if (!isAnswered) finishChoice('new');
+      updateBookUI(); updateSidebar(); saveState(); return;
+    }
     if (navigating || restoring || !currentWord) return;
     if (!inList(newWordBook, currentWord.gk)) {
       newWordBook.push({ ...currentWord });
@@ -457,6 +530,10 @@
   }
 
   function updateBookUI() {
+    if (isChoice) {
+      $('knownBookCount').textContent = knownWords.length;
+      $('knownList').innerHTML = knownWords.length ? knownWords.map(w => '<div class="known-entry"><b>' + esc(w.word) + '</b><span>' + esc(w.meaning) + '</span><button type="button" data-unmark="' + esc(w.gk) + '">取消熟词</button></div>').join('') : '<span class="empty-note">暂无熟词</span>';
+    }
     wrongBookCount.textContent = wrongBook.length;
     newWordCount.textContent = B.groupWords(newWordBook).length;
     wrongList.innerHTML = wrongBook.length
@@ -489,7 +566,7 @@
     const target = (wrongBook.concat(newWordBook, currentVocabulary)).find(w => w.gk === gk);
     if (!target) return;
     const openWord = () => {
-      if (!viewing) { saveState(); suspended = C.store.get(B.stateKey(activeUserId), null); }
+      if (!viewing) { saveState(); suspended = C.store.get(stateKey(activeUserId), null); }
       viewing = true;
       closeSidebar();
       clearInterval(timerInterval);
@@ -658,12 +735,14 @@
     progressText.textContent = `${completedCount}/${total}`;
     correctCountEl.textContent = correctTotal;
     wrongCountEl.textContent = wrongTotal;
+    if (isChoice) $('knownCount').textContent = knownTotal;
     progressFill.style.width = `${total > 0 ? (completedCount / total) * 100 : 0}%`;
   }
 
   function showReport() {
     const total = correctTotal + wrongTotal;
     const acc = total ? Math.round((correctTotal / total) * 100) : 0;
+    if (isChoice && modalHost.childElementCount) return;
     const report = modal(`<h2>🎉 本轮完成</h2>
       <p>${trainingKind === 'flash' ? '闪过学习 · 拼写巩固' : reviewPool ? '错题+全局生词复习' : `第 ${currentChapter} 章 · ${esc(chapterTitle)}`}</p>
       <div class="report-grid">
@@ -671,10 +750,11 @@
         <div class="report-cell"><div class="v" style="color:var(--wrong);">${wrongTotal}</div><div class="l">答错</div></div>
         <div class="report-cell"><div class="v" style="color:var(--accent);">${acc}%</div><div class="l">正确率</div></div>
       </div>
+      ${isChoice ? `<p>选词练习 · 熟词跳过 ${knownTotal} 词（不计正确率）</p>` : ''}
       <p style="font-size:.82rem;">错题本剩 ${wrongBook.length} 词 · 生词本 ${newWordBook.length} 词</p>
       <div class="actions"><button type="button" id="rClose">继续</button>
       <button class="primary" type="button" id="rReview">📚 复习错题与生词</button></div>`);
-    report.querySelector('#rClose').addEventListener('click', () => report.remove());
+    report.querySelector('#rClose').addEventListener('click', () => { report.remove(); if (isChoice) resetAndStart(reviewPool, { clearBooks: false }); });
     report.querySelector('#rReview').addEventListener('click', ev => {
         ev.target.closest('.modal').remove();
         startReview();
@@ -713,14 +793,15 @@
   function saveState() {
     if (restoring || navigating) return;
     if (!suspended && persistedQueue !== shuffledWords) {
-      C.store.set(B.queueKey(activeUserId), shuffledWords);
+      C.store.set(queueKey(activeUserId), shuffledWords);
       persistedQueue = shuffledWords;
     }
-    C.store.set(B.stateKey(activeUserId), suspended || {
+    C.store.set(stateKey(activeUserId), suspended || {
       chapter: currentChapter, globalMode, currentMode,
+      ...(isChoice ? { choiceOptions, choiceSelected, knownWords, knownTotal } : {}),
       correctTotal, wrongTotal, completedCount, currentIndex,
       wrongBook, hintEnabled, timerEnabled, timerDuration,
-      queueKey: B.queueKey(activeUserId), review: !!reviewPool, trainingKind,
+      queueKey: queueKey(activeUserId), review: !!reviewPool, trainingKind,
       typed, isAnswered, lastResult, newWordRetry, replaceRevealed,
       resultText: resultArea.textContent, remaining: Number(timerSeconds.textContent),
       flashOffsets: Object.fromEntries(flashOffsets), flashSessions,
@@ -734,9 +815,15 @@
     restoring = true;
     clearInterval(timerInterval);
     try {
-      const s = C.store.get(B.stateKey(activeUserId), {}) || {};
+      const s = C.store.get(stateKey(activeUserId), {}) || {};
       const g = C.store.get(B.globalKey(activeUserId), {}) || {};
-      globalMode = s.globalMode || 'random';
+      globalMode = isChoice ? 'chinese' : (s.globalMode || 'random');
+      if (isChoice) {
+        const chapters = await Promise.all(C.CHAPTERS.map(c => C.loadChapter(c.id)));
+        choicePool = chapters.flatMap(c => c.words);
+        knownWords = Array.isArray(s.knownWords) ? s.knownWords : [];
+        knownTotal = s.knownTotal || 0;
+      }
       hintEnabled = !!s.hintEnabled; timerEnabled = !!s.timerEnabled;
       timerDuration = s.timerDuration || 10;
       dailyGoal = g.dailyGoal || 50;
@@ -768,11 +855,16 @@
         lastResult = s.lastResult || null; newWordRetry = !!s.newWordRetry; replaceRevealed = !!s.replaceRevealed;
         currentMode = s.currentMode || currentMode;
         chineseDisplay.textContent = currentMode === 'chinese' ? currentWord.meaning : '🔊 听音拼写';
+        if (isChoice) {
+          chineseDisplay.textContent = currentWord.word;
+          if (window.VocabChoice.valid(s.choiceOptions, currentWord)) choiceOptions = s.choiceOptions;
+          choiceSelected = Number.isInteger(s.choiceSelected) ? s.choiceSelected : -1;
+        }
         updateModeIndicator(); resultArea.textContent = s.resultText || '';
         answerInput.disabled = isAnswered && !newWordRetry;
         syncInput(); renderSlots();
         if (isAnswered || newWordRetry) { clearInterval(timerInterval); showExample(); }
-        else if (timerEnabled) startTimer(s.remaining > 0 ? s.remaining : timerDuration);
+        else if (timerEnabled && (!isChoice || choiceOptions.length === 4)) startTimer(s.remaining > 0 ? s.remaining : timerDuration);
       }
       updateStats();
     } finally { restoring = false; }
@@ -780,6 +872,32 @@
 
   // ---------- 事件绑定 ----------
   function bindEvents() {
+    $('homeLink').addEventListener('click', async e => {
+      e.preventDefault(); clearInterval(timerInterval); saveState(); navigating = true;
+      try { await B.flush(); location.href = 'index.html'; }
+      catch (err) { navigating = false; resultArea.textContent = err.message; }
+    });
+    if (isChoice) {
+      $('choiceOptions').addEventListener('click', e => {
+        const button = e.target.closest('button[data-option]');
+        if (button) finishChoice('answer', Number(button.dataset.option));
+      });
+      $('knownList').addEventListener('click', e => {
+        const button = e.target.closest('button[data-unmark]');
+        if (!button || navigating || restoring || viewing) return;
+        knownWords = knownWords.filter(w => w.gk !== button.dataset.unmark);
+        updateBookUI(); saveState();
+      });
+      $('knownWordBtn').addEventListener('click', () => {
+        if (navigating || restoring || viewing || !currentWord) return;
+        const known = knownRecords();
+        if (!inList(known.list, currentWord.gk)) { known.list.push({ ...currentWord }); known.save(known.list); }
+        newWordBook = newWordBook.filter(w => w.gk !== currentWord.gk);
+        const records = wrongRecords(); records.save(records.list.filter(w => w.gk !== currentWord.gk));
+        if (!isAnswered) { knownTotal++; completedCount++; isAnswered = true; clearInterval(timerInterval); }
+        updateBookUI(); updateStats(); saveState(); moveToNextWord();
+      });
+    }
     $('bookSelect').addEventListener('change', async () => {
       clearInterval(timerInterval); saveState(); navigating = true;
       try { B.select($('bookSelect').value, activeUserId); await B.flush(); location.reload(); }
@@ -839,7 +957,7 @@
       timerToggle.classList.toggle('active', timerEnabled);
       timerDisplay.style.display = timerEnabled ? 'flex' : 'none';
       if (!timerEnabled) clearInterval(timerInterval);
-      else if (currentWord && !isAnswered) startTimer();
+      else if (currentWord && !isAnswered && (!isChoice || choiceOptions.length === 4)) startTimer();
       saveState();
     });
 
@@ -887,7 +1005,7 @@
     // 通道 A：桌面物理键盘
     // 键盘约定与原站完全一致：字母 / 空格 / 连字符一律用于拼写，
     // 命令只保留 Enter（提交·下一题）、Backspace（删除）、Escape（关弹窗/侧栏）。
-    // 不设任何字母快捷键 —— 拼写是本页唯一主交互，任何字母劫持都会直接打断输入
+    // 拼写模式不设字母快捷键；选词模式单独处理 A/B/C/D，避免侵入拼写输入。
     // （曾因 r/s 被劫持为"重开/词表"导致无法输入，见 README 修复记录）。
     document.addEventListener('keydown', e => {
       if (flashActive || navigating || restoring) return;
@@ -899,9 +1017,13 @@
       if (!currentWord) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      if (e.key === 'Enter') { e.preventDefault(); isAnswered ? moveToNextWord() : submitAnswer(); return; }
+      if (e.key === 'Enter') { if (isChoice && e.target?.tagName === 'BUTTON') return; e.preventDefault(); isAnswered ? moveToNextWord() : submitAnswer(); return; }
       if (e.key === 'Escape') { if (sidebar.classList.contains('open')) closeSidebar(); return; }
       if (sidebar.classList.contains('open')) return;   // 侧栏浏览中不向答题区写字母
+      if (isChoice) {
+        if (/^[abcd]$/i.test(e.key) && !e.repeat) { e.preventDefault(); finishChoice('answer', e.key.toLowerCase().charCodeAt(0) - 97); }
+        return;
+      }
       if (e.key === 'Backspace') { e.preventDefault(); deleteChar(); return; }
       if (isAnswered && !newWordRetry) return;
       if (/^[a-zA-Z\-\s]$/.test(e.key)) { e.preventDefault(); acceptChar(e.key); }

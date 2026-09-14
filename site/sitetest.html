@@ -20,12 +20,12 @@
 <body>
 <div id="leds"></div>
 <div id="report">waiting for iframes…</div>
-<iframe id="fQuiz" src="index.html"></iframe>
+<iframe id="fQuiz" src="spelling.html"></iframe>
 <iframe id="fBrowse" src="handout.html"></iframe>
 
 <script>
 /* ---------------------------------------------------------------------
-   用 iframe 真实加载 index.html / handout.html，读取页面自己埋的启动标记。
+   用 iframe 真实加载 spelling.html / handout.html，读取页面自己埋的启动标记。
    必须用 --allow-file-access-from-files 启动，否则跨 file 源读取会抛 SecurityError。
    这是"整页能否启动"的最终证据，selftest.html 只覆盖了 core.js。
    --------------------------------------------------------------------- */
@@ -38,14 +38,14 @@
     const fq = document.getElementById('fQuiz');
     const fb = document.getElementById('fBrowse');
     let qe = null, be = null;
-    try { qe = fq.contentWindow; } catch (e) { rec('index.html 可脚本访问', false, e.name); }
+    try { qe = fq.contentWindow; } catch (e) { rec('spelling.html 可脚本访问', false, e.name); }
     try { be = fb.contentWindow; } catch (e) { rec('handout.html 可脚本访问', false, e.name); }
     if (!qe || !be) { render(r); return; }
 
     let qDoc = null, bDoc = null;
     try { qDoc = qe.document; bDoc = be.document; } catch (e) { /* 下面各自断言 */ }
 
-    rec('index.html 文档就绪', qDoc && qDoc.readyState === 'complete');
+    rec('spelling.html 文档就绪', qDoc && qDoc.readyState === 'complete');
     rec('quiz.js 已执行到 boot 末尾', !!(qe && qe.__QUIZ_READY));
     rec('quiz 已出第一题', !!(qe && qe.__QUIZ_STARTED));
     const slots = qe && qe.__QUIZ_SLOT_COUNT;

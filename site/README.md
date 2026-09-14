@@ -2,12 +2,38 @@
 
 复刻 `leonwang.cc/ielts-vocab` 的手感，改成暗色系，**纯本地、零依赖、离线可用**。
 
+
+## 模式首页与选词练习
+
+打开首页后选择「拼写练习」或「选词练习」。练习页顶部可返回模式首页。
+原拼写练习移至 spelling.html，保留旧进度；闪过学习仍在拼写页内。
+
+选词练习展示英文单词和音标，从 A / B / C / D 中选择中文释义。点击或按对应字母立即判题，
+显示正确答案和可用例句，再按「下一题」或 Enter 继续。答题后重复点击不重复计分。
+干扰项从当前词书抽取，释义去重，排除同拼写的其他释义；跨书复习还会参考当前复习题池。
+这不是语义判别模型，导入的同义、相近释义仍需自行校对。
+不足三个不同的干扰项时会提示补充词汇或切换模式，不用假释义凑数。
+
+- 答对：计入当前成绩、每日目标和学习日历；错题连续答对两次后移出。
+- 答错、跳过、超时：记录错题并计错；跳过立即进入下一词。
+- 生词：加入同一用户的全局生词本；未答题时计错并展示答案，已答题时不重复计分。
+- 熟词：保留熟词记录，移出该模式来源书错题本与全局生词本，进入下一词；不增加答对或每日目标。
+- 熟词记录可展开查看并取消标记；它是记录，不会永久排除词汇，重新开始仍可练习。
+
+拼写和选词的题序、成绩、错题、当前答题状态分别按用户和词书保存，生词本和学习日历共享。
+选词还保存四个选项及顺序、选择结果和熟词记录，刷新不会重新生成本题选项。
+选词存储键为 ivocab-progress:{uid}:{bookId}:choice 和 ivocab-queue:{uid}:{bookId}:choice，
+包含在完整备份中。跨书复习的错题与熟词记录写回来源书的选词存档。
+本轮结束先保留答案，点击下一题显示报告；报告的「继续」开始新一轮。
+
 ## 打开方式
 
 **双击 `index.html` 即可**，不需要服务器。
 
 ```
-site/index.html      背单词（拼写训练）
+site/index.html      模式选择首页
+site/spelling.html   拼写练习（原训练页面，旧进度保留）
+site/choice.html     选词练习（英文 → 四选一中文释义）
 site/handout.html    词汇手册（按章浏览 + 详情弹窗）
 ```
 
@@ -20,7 +46,7 @@ site/handout.html    词汇手册（按章浏览 + 详情弹窗）
 
 ```
 site/
-  index.html  handout.html     两个页面
+  index.html  spelling.html  choice.html  handout.html  books.html
   selftest.html  sitetest.html  验证页（见下）
   assets/app.css               暗色设计体系
   assets/core.js               判题内核 + 数据加载 + 存储 + 朗读
@@ -39,7 +65,7 @@ site/
 - 三模式：看中文 / 听音 / 随机；提示（预填首字母）；计时；每日目标
 - 双输入通道：桌面全局键盘事件驱动槽位（原生 input 隐藏），
   触屏设备显示原生 input 走 IME（CSS `@media (pointer: coarse)`）
-- **键盘契约：字母 / 空格 / 连字符一律用于拼写**。命令键只有
+- **拼写练习的键盘契约：字母 / 空格 / 连字符一律用于拼写**。命令键只有
   `Enter`（提交 · 下一题）、`Backspace`（删除）、`Escape`（关弹窗 / 侧栏），
   不设任何字母快捷键 —— 详见下方"修复记录"
 - 错题本 / 生词本 / 复习 / 多用户 / 侧边词表抽屉 + 搜索 + 状态图标
@@ -315,15 +341,18 @@ test-site 覆盖判题、键盘规则、日期/日历、数据、资源、CSS �
 npm install --prefix "$env:TEMP/ivocab-validation" jsdom@30.0.1 fake-indexeddb@6.2.5 --no-audit --no-fund
 $env:VOCAB_TEST_MODULES = "$env:TEMP/ivocab-validation/node_modules"
 node build/test-books.mjs
+node build/test-choice.mjs
 ~~~
 
 覆盖导入映射、项目原 CSV、旧存档迁移、稳定 ID、跨书进度/题序/输入、
 生词重拼、按来源记录错题、全局生词分组、多用户、多章节闪过恢复、
 非法备份、写入失败、备份未保存数据、失败恢复及 localStorage 回退。
+选词测试另覆盖四选一、重复作答、刷新后选项保留、熟词/跳过/超时、模式隔离、
+空章节、少词词书、跨书归属、键盘操作和上传文本安全显示。
 这些是 DOM/IndexedDB 模拟测试，不代替 Chrome/Edge 的实际布局和 file:// 兼容性测试。
 
 原有浏览器自检页为 selftest.html / sitetest.html，可通过 build/shoot.ps1 生成新截图后运行 test-site。
-本轮浏览器工具拒绝访问 file:// 页面，因此尚未取得新的真实浏览器与视觉证据。
+交接记录中浏览器工具曾拒绝访问 file:// 页面。本次未绕过该限制，真实浏览器与视觉验证仍待完成。
 
 ## 已知限制
 

@@ -211,10 +211,12 @@ console.log('\n=== A2. 学习日历内核（TZ 钉死 Asia/Shanghai）===');
 // ==================== B. 静态完整性 ====================
 console.log('\n=== B. 静态完整性 ===');
 const pages = [
-  { html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/quiz.js', 'site/assets/flash.js'] },
+  { html: 'site/spelling.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/quiz.js', 'site/assets/flash.js'] },
   { html: 'site/handout.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/browse.js'] },
 ];
 pages.push({ html: 'site/books.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js'] });
+pages.push({ html: 'site/choice.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/choice.js', 'site/assets/quiz.js'] });
+pages.push({ html: 'site/index.html', js: [] });
 const allSrc = [];
 for (const pg of pages) {
   const htmlPath = path.join(ROOT, pg.html);
@@ -226,6 +228,8 @@ for (const pg of pages) {
   // JS 里以 innerHTML 模板动态生成的 id 也算"已声明"（如弹窗内元素）
   const dynamic = new Set([...js.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
   for (const m of js.matchAll(/\.id\s*=\s*['"]([^'"]+)['"]/g)) dynamic.add(m[1]);
+  // Choice controls are guarded by the page mode in the shared controller.
+  if (pg.html === 'site/spelling.html') ['choiceOptions', 'knownWordBtn', 'knownCount', 'knownList', 'knownBookCount'].forEach(id => dynamic.add(id));
   const used = new Set([
     ...js.matchAll(/\$\('([^']+)'\)/g).map(m => m[1]),
     ...js.matchAll(/getElementById\('([^']+)'\)/g).map(m => m[1]),
@@ -281,7 +285,7 @@ for (const pg of pages) {
     const baseClasses = new Set([...base.matchAll(CLASS_RE)].map(x => x[1]));
 
     // 收集 class：静态 HTML + JS 模板串（.slot / .card 等由 JS 生成）
-    const sources = ['site/index.html', 'site/handout.html',
+    const sources = ['site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html',
                      'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/books.html'];
     const used = new Map();   // class -> 来源
     for (const s of sources) {
@@ -456,7 +460,7 @@ function analyze(file) {
 }
 
 // 陈旧截图不是当前代码的浏览器证据。只读取晚于全部相关页面源码的 PNG。
-const shotSources = ['site/index.html', 'site/handout.html', 'site/books.html',
+const shotSources = ['site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html', 'site/books.html',
   'site/selftest.html', 'site/sitetest.html', 'site/assets/core.js', 'site/assets/quiz.js',
   'site/assets/browse.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/assets/app.css'];
 const newestSource = Math.max(...await Promise.all(shotSources.map(async f => (await stat(path.join(ROOT, f))).mtimeMs)));
@@ -522,14 +526,14 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 // ==================== F. 语法解析（含此前未覆盖的 quiz.js / browse.js）====================
 console.log('\n=== F. JS 语法解析 ===');
 {
-  const jsFiles = ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js', 'site/assets/books.js', 'site/assets/library.js'];
+  const jsFiles = ['site/assets/choice.js', 'site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js', 'site/assets/books.js', 'site/assets/library.js'];
   for (const f of jsFiles) {
     const src = await readFile(path.join(ROOT, f), 'utf8');
     try { new vm.Script(src, { filename: f }); ok(`${f} 语法正确`, true, `${(src.length / 1024).toFixed(1)} KB`); }
     catch (e) { ok(`${f} 语法正确`, false, e.message); }
   }
   // HTML 里的内联 <script>（无 src）也要解析
-  for (const h of ['site/index.html', 'site/handout.html', 'site/selftest.html']) {
+  for (const h of ['site/index.html', 'site/spelling.html', 'site/choice.html', 'site/books.html', 'site/handout.html', 'site/selftest.html', 'site/sitetest.html']) {
     const html = await readFile(path.join(ROOT, h), 'utf8');
     const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
     let bad = 0, msg = '';

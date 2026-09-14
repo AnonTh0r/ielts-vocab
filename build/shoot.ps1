@@ -40,7 +40,7 @@ Remove-Item $prof -Recurse -Force -ErrorAction SilentlyContinue
 # 输出名, 窗口尺寸, 目标页, 是否需要 --allow-file-access-from-files
 # 最后一项：selftest/sitetest 用 iframe 加载同目录页面，file:// 下默认被当作跨源拒绝
 $jobs = @(
-  @('quiz.png',     '1280,1900', 'index.html',    $false),
+  @('quiz.png',     '1280,1900', 'spelling.html',    $false),
   @('handout.png',  '1400,900',  'handout.html',  $false),
   @('selftest.png', '1400,400',  'selftest.html', $true),
   # sitetest 的宽度必须容得下整条 LED：约 40 格 x 40px，窄了会截掉蓝色终止符，

@@ -208,17 +208,19 @@ window.VocabBooks = (function () {
       if (key === 'ivocab-users' && (!Array.isArray(value) || !value.length || value.some(u => !u || typeof u.id !== 'string' || typeof u.name !== 'string'))) throw new Error('备份用户格式错误');
       if (/^ivocab-(progress|global|state):/.test(key)) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('备份进度格式错误');
-        for (const f of ['currentIndex', 'completedCount', 'correctTotal', 'wrongTotal', 'dailyGoal', 'dailyCount', 'chapter', 'remaining']) {
+        for (const f of ['currentIndex', 'completedCount', 'correctTotal', 'wrongTotal', 'dailyGoal', 'dailyCount', 'chapter', 'remaining', 'knownTotal']) {
           if (value[f] != null && (!Number.isFinite(value[f]) || value[f] < 0)) throw new Error('备份数值格式错误');
         }
         if (value.history != null && (typeof value.history !== 'object' || Array.isArray(value.history)
           || Object.entries(value.history).some(([day, count]) => !/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(count) || count < 0))) throw new Error('备份学习历史格式错误');
+        if (value.choiceOptions != null && (!Array.isArray(value.choiceOptions) || ![0, 4].includes(value.choiceOptions.length) || value.choiceOptions.some(x => typeof x !== 'string'))) throw new Error('备份选项格式错误');
+        if (value.choiceSelected != null && (!Number.isInteger(value.choiceSelected) || value.choiceSelected < -1 || value.choiceSelected > 3)) throw new Error('备份选择结果格式错误');
         const sessions = value.flashSessions ? Object.values(value.flashSessions) : [value.flashSession].filter(Boolean);
         for (const f of sessions) {
           if (!Array.isArray(f.words) || !f.words.length || f.words.length > 10 || f.words.some(w => !w || typeof w.word !== 'string' || typeof w.meaning !== 'string')
             || !Number.isInteger(f.index) || f.index < 0 || f.index > f.words.length || !Array.isArray(f.retained)) throw new Error('备份闪过学习格式错误');
         }
-        for (const f of ['newWordBook', 'wrongBook', 'queue']) {
+        for (const f of ['newWordBook', 'wrongBook', 'knownWords', 'queue']) {
           if (value[f] != null && (!Array.isArray(value[f]) || value[f].some(w => !w || typeof w.word !== 'string' || typeof w.meaning !== 'string' || typeof w.gk !== 'string'))) throw new Error('备份词本格式错误');
         }
       }

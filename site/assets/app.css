@@ -1018,3 +1018,38 @@ body.browse {
 .word-group .word-chip { max-width: 100%; flex-wrap: wrap; overflow-wrap: anywhere; }
 .word-chip small { color: var(--text-secondary); font-size: .75rem; }
 [hidden] { display: none !important; }
+
+/* 模式首页与释义选择练习 */
+.mode-home { max-width: 960px; margin: 7vh auto; gap: 22px; text-align: center; }
+.home-eyebrow { color: var(--accent); font-size: .9rem; letter-spacing: .12em; margin: 0; }
+.home-intro, .home-note, .choice-help { color: var(--text-secondary); line-height: 1.8; }
+.home-intro { margin: 0; font-size: 1.05rem; }
+.mode-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 20px 0 0; }
+.mode-card { display: flex; flex-direction: column; align-items: flex-start; gap: 16px; padding: 32px; text-align: left; text-decoration: none; color: var(--text); border: 1px solid var(--border-strong); border-radius: 24px; background: var(--panel-bg); transition: border-color .2s, transform .2s; }
+.mode-card:hover { border-color: var(--accent); transform: translateY(-3px); }
+.mode-card-icon { font-size: 2.3rem; }
+.mode-card h2, .mode-card p { margin: 0; }
+.mode-card p { color: var(--text-secondary); line-height: 1.8; flex: 1; }
+.mode-card-action { color: var(--accent); font-weight: 700; padding-top: 12px; }
+.home-note { font-size: .85rem; }
+.home-links { display: flex; gap: 28px; justify-content: center; flex-wrap: wrap; }
+.home-links a { color: var(--text-secondary); }
+.mode-card:focus-visible, .home-links a:focus-visible, .choice-option:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
+body[data-practice="choice"] #modeGroup, body[data-practice="choice"] #hintToggle, body[data-practice="choice"] #flashStudyBtn, body[data-practice="choice"] #answerInput, body[data-practice="choice"] #letterSlots { display: none; }
+body[data-practice="choice"] #chineseDisplay { font-size: clamp(2rem, 5vw, 3rem); overflow-wrap: anywhere; min-height: 90px; display: grid; place-items: center; }
+.choice-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; width: 100%; }
+.choice-option { display: flex; align-items: center; gap: 16px; min-height: 94px; padding: 20px; border-radius: 16px; text-align: left; white-space: normal; overflow-wrap: anywhere; font-size: 1rem; line-height: 1.7; }
+.choice-letter { display: grid; place-items: center; flex: 0 0 36px; height: 36px; background: var(--elevated); border-radius: 10px; font-weight: 700; }
+.choice-option.correct { border-color: var(--correct); color: var(--correct); }
+.choice-option.wrong { border-color: var(--wrong); color: var(--wrong); }
+.choice-option:disabled { cursor: default; opacity: 1; }
+.choice-help { text-align: center; font-size: .82rem; margin: 0; }
+.known-panel { padding: 16px; border: 1px solid var(--border); border-radius: 16px; }
+.known-panel summary { cursor: pointer; color: var(--text-secondary); }
+.known-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.known-entry { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 8px; overflow-wrap: anywhere; }
+.known-entry span { flex: 1; }
+@media (max-width: 640px) { .mode-home { margin: 3vh auto; } .mode-cards, .choice-options { grid-template-columns: 1fr; } .mode-card { padding: 24px; } .choice-option { min-height: 76px; padding: 14px; } }
+@media (prefers-reduced-motion: reduce) { .mode-card { transition: none; } .mode-card:hover { transform: none; } }
+
+#homeLink { position: static; align-self: flex-start; margin-bottom: 4px; }

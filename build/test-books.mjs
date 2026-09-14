@@ -11,7 +11,7 @@ const { IDBFactory } = require('fake-indexeddb');
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const source = {};
 for (const f of ['core', 'books', 'quiz', 'flash', 'browse', 'library']) source[f] = await readFile(path.join(ROOT, 'site/assets/' + f + '.js'), 'utf8');
-const html = await readFile(path.join(ROOT, 'site/index.html'), 'utf8');
+const html = await readFile(path.join(ROOT, 'site/spelling.html'), 'utf8');
 const chapters = {};
 for (let i = 1; i <= 22; i++) chapters[i] = await readFile(path.join(ROOT, 'site/data/ch' + i + '.js'), 'utf8');
 const database = new IDBFactory(), legacy = new Map(), errors = [];
