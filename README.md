@@ -21,6 +21,7 @@
 ```
 site/index.html      背单词（槽位拼写训练）
 site/handout.html    词汇手册（卡片浏览 + 详情弹窗）
+site/books.html      词书管理（上传、映射、切换、备份）
 ```
 
 手感对齐原站：槽位逐字母拼写、**严格全等判定**（无编辑距离、无部分得分）、
@@ -32,6 +33,13 @@ site/handout.html    词汇手册（卡片浏览 + 详情弹窗）
 
 完整说明、与原站的行为差异清单、以及历次修复记录见 **[`site/README.md`](site/README.md)**。
 
+## 词书切换与导入
+
+从训练页面顶部切换词书，点击「📚 词书管理」上传 CSV / TSV / JSON、映射字段并预览导入。
+每本词书独立保存题序、输入和训练进度；同一用户的生词本及学习日历全局共享。
+内置雅思存档自动迁移，支持完整备份与恢复。网站运行仍零 npm 依赖。
+详见 [词书使用与测试说明](site/README.md)。
+
 ## 构建流水线
 
 ```bash
@@ -40,7 +48,7 @@ node build/parse.mjs         # node:vm 解析 + 正则交叉校验      ->  buil
 node build/render.mjs        # 渲染词书与导出                   ->  *.md / *.csv / *.tsv
 node build/make-site.mjs     # 编译为 file:// 可用的逐章数据     ->  site/data/chN.js
 pwsh -File build/shoot.ps1   # 无头 Chrome 截 4 张图           ->  .shots/
-node build/test-site.mjs     # 验收：112 项断言
+node build/test-site.mjs     # 验收（缺失/陈旧截图明确跳过）
 ```
 
 词库**不入库也能重建**：`raw/`、`build/normalized.json`、`.shots/` 均已 gitignore，
@@ -57,34 +65,12 @@ node build/test-site.mjs     # 验收：112 项断言
 
 ## 验收
 
-`node build/test-site.mjs` — 8 组 **112 项断言**，全部确定性可复现（连跑三次结果一致）：
+运行 `node build/test-site.mjs` 和 `node build/test-flash.mjs`。
+词书集成测试为 `build/test-books.mjs`，临时开发依赖及运行方法见 [site/README.md](site/README.md)。
 
-- **判题内核**：归一化规则逐条对齐原站，含"含标点词判对却满格红"的防回归
-- **键盘输入回归**：字母/空格必须进拼写缓冲，不得被绑定成命令
-- **学习日历内核**：本地日期键、绿阶阈值、网格几何、连击统计（`TZ` 钉死 `Asia/Shanghai`）
-- **洗牌**：完整排列 + 种子化卡方检验（原站 `sort(random-.5)` 有偏）
-- **静态完整性**：id/资源可解析、无 `type="module"`、无本地 `fetch`、class 选择器覆盖
-- **数据一致性**：22 章词数与抓取基准逐章比对
-- **截图像素分析**：手工解码 PNG（`zlib` inflate + 反滤波），用亮度证明暗色生效
-- **真实浏览器**：无头 Chrome + iframe 派发真实 `keydown`，读回计算样式与行为断言
-
-浏览器部分用**像素当通信信道**：本机无头 Chrome 的 stdout 无法回读，
-所以自检页把断言结果画成 LED 色条（白=对齐基准、绿=通过、红=失败、蓝=终止符，
-读不到终止符即说明脚本中途崩溃），由测试脚本解码 PNG 读回结论——不需要肉眼。
-
-### 干净克隆上的行为
-
-6 组断言依赖被 gitignore 的生成物（`raw/manifest.json`、`build/normalized.json`、
-`.shots/*.png`）。缺它们时脚本**跳过并打印补齐方法，既不崩也不记 FAIL**：
-
-| 场景 | 结果 |
-|---|---|
-| 生成物齐全 | 112 PASS / 0 FAIL / 0 SKIP |
-| 刚克隆、未跑构建 | 98 PASS / 0 FAIL / 6 SKIP（exit 0）|
-
-这是修出来的：早期版本缺 `normalized.json` 时直接 ENOENT 崩溃，C~G 五个组静默不执行，
-**只跑了 83 项却看起来像"通过了"**——验收脚本自己崩掉比断言失败更危险。
-章节清单比对改为退回内置 `EXPECT` 表，因此词数一致性检查在任何克隆上都照常执行。
+内核、输入规则、日历、数据与静态完整性均检查。浏览器组只读取晚于页面源码的截图，
+旧截图明确 SKIP，不能当作当前验证通过。当前词书流程已通过 DOM/IndexedDB 模拟测试，
+实际浏览器与视觉验证仍待完成。旧版本的 112/98 项计数属于历史基线。
 
 ## 环境
 

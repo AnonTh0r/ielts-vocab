@@ -46,11 +46,12 @@
     markActive();
     chapterTitle.textContent = `第 ${id} 章 · 加载中…`;
     C.loadChapter(id).then(data => {
+      if (id !== currentChapter) return;
       words = data.words;
       chapterTitle.textContent = `第 ${id} 章 · ${data.title}`;
       const tc = {};
       words.forEach(w => { tc[w.tag] = (tc[w.tag] || 0) + 1; });
-      chapterMeta.textContent = `${words.length} 词 · ` +
+      chapterMeta.textContent = `${window.VocabBooks.current().name} · ${words.length} 词 · ` +
         ['核心', '高频', '低频', '识记'].filter(t => tc[t]).map(t => `${t} ${tc[t]}`).join(' · ');
       cardGrid.innerHTML = words.map((w, i) => `
         <div class="card" data-i="${i}" tabindex="0" role="button" aria-label="${esc(w.word)}">
@@ -102,7 +103,7 @@
         <div class="badges" style="justify-content:flex-start;margin-bottom:12px;">
           <span class="pos">${esc(w.pos)}</span>
           <span class="tag tag-${esc(w.tag)}">${esc(w.tag)}</span>
-          <span class="tag tag-低频">第 ${w.gk.split(':')[0].replace('ch', '')} 章 · #${w.id}</span>
+          <span class="tag tag-低频">第 ${w.chapter || currentChapter} 章 · #${esc(w.id)}</span>
         </div>
         <div class="meaning-large">${esc(w.meaning)}</div>
         ${w.exEN ? `<div class="example-box" style="display:block;">
@@ -160,8 +161,10 @@
     }
   });
 
+  window.VocabBooks.init().then(() => {
   buildNav();
   // 支持 handout.html#5 直达某章
   const fromHash = parseInt(location.hash.replace('#', ''), 10);
-  go(Number.isFinite(fromHash) && fromHash >= 1 && fromHash <= 22 ? fromHash : 1);
+  go(Number.isFinite(fromHash) && fromHash >= 1 && C.CHAPTERS.some(c => c.id === fromHash) ? fromHash : C.CHAPTERS[0].id);
+  }).catch(e => { chapterTitle.textContent = e.message; });
 })();

@@ -6,7 +6,10 @@
    ===================================================================== */
 (function () {
   'use strict';
-  const C = window.VocabCore;
+  const C = window.VocabCore, B = window.VocabBooks;
+  const esc = B.esc;
+  let flashSessions = {}, persistedQueue = null, trainingKind = 'chapter';
+  let restoring = true, flashSession = null, navigating = false, viewing = false, suspended = null;
 
   // ---------- DOM ----------
   const $ = id => document.getElementById(id);
@@ -53,7 +56,7 @@
   let lastResult = null;
   let flashActive = false;
   let newWordRetry = false, replaceRevealed = false;
-  const flashOffsets = new Map(); // 每个用户、章节独立推进；取消不消耗本组
+  let flashOffsets = new Map(); // 每个用户、章节独立推进；取消不消耗本组
 
   const MOBILE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const MASTERY_TO_CLEAR = 2; // 错题需连对 N 次才移出错题本
@@ -79,9 +82,12 @@
     users = u.users; activeUserId = u.active;
     C.saveUsers(users, activeUserId);
     renderUsers();
+    $('bookSelect').innerHTML = B.list().map(b => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('');
+    $('bookSelect').value = B.active;
+    $('studyTitle').textContent = '📘 ' + B.current().name + ' · 拼写训练';
 
     chapterSelect.innerHTML = C.CHAPTERS.map(c =>
-      `<option value="${c.id}">第 ${c.id} 章 · ${c.title}</option>`).join('');
+      `<option value="${c.id}">第 ${c.id} 章 · ${esc(c.title)}</option>`).join('');
 
     todayStr = C.dateKey();
     bindEvents();
@@ -93,10 +99,11 @@
 
     restore().then(() => {
       window.__QUIZ_RESTORED = true;
-      if (shuffledWords.length && currentWord) { renderSlots(); updateStats(); }
+      if (shuffledWords.length && currentWord) { renderSlots(); updateStats(); saveState(); }
       else resetAndStart();
     }).catch(e => {
       (window.__PAGE_ERRORS = window.__PAGE_ERRORS || []).push('restore: ' + e.message);
+      resultArea.textContent = '无法恢复训练：' + e.message;
     });
     window.__QUIZ_READY = true;
     // 只读调试钩子：供 selftest/sitetest 在真实浏览器里断言键盘行为。
@@ -117,7 +124,7 @@
 
   // ---------- 用户 ----------
   function renderUsers() {
-    userSelect.innerHTML = users.map(u => `<option value="${u.id}">${u.name}</option>`).join('');
+    userSelect.innerHTML = users.map(u => `<option value="${esc(u.id)}">${esc(u.name)}</option>`).join('');
     userSelect.value = activeUserId;
   }
 
@@ -135,11 +142,12 @@
       let id = C.slug(name), n = 2;
       while (users.some(u => u.id === id)) id = `${C.slug(name)}-${n++}`;
       users.push({ id, name });
+      clearInterval(timerInterval); saveState(); navigating = true;
       C.saveUsers(users, id);
       activeUserId = id;
       renderUsers();
       m.remove();
-      resetAndStart();
+      B.flush().then(() => location.reload()).catch(e => { resultArea.textContent = e.message; });
     };
     m.querySelector('#okUser').addEventListener('click', ok);
     m.querySelector('#cancelUser').addEventListener('click', () => m.remove());
@@ -147,10 +155,14 @@
   }
 
   // ---------- 章节 ----------
+  let chapterRequest = 0;
   function switchChapter(id) {
+    const request = ++chapterRequest;
     return C.loadChapter(id).then(data => {
+      if (request !== chapterRequest) return null;
       currentVocabulary = data.words;
       currentChapter = data.id;
+      flashSession = flashSessions[String(currentChapter)] || null;
       chapterTitle = data.title;
       chapterSelect.value = String(id);
       updateSidebar();
@@ -163,10 +175,11 @@
     const o = opts || {};
     clearInterval(timerInterval);
     reviewPool = pool || null;
+    trainingKind = pool ? (o.kind || 'review') : 'chapter';
     shuffledWords = pool ? C.shuffle(pool) : C.shuffle(currentVocabulary);
     currentIndex = 0; correctTotal = 0; wrongTotal = 0; completedCount = 0;
-    // 只有显式"重新开始本章"才清空两本；切章保留错题记录
-    if (!pool && o.clearBooks !== false) { wrongBook = []; newWordBook = []; }
+    // 重开章节只清本词书错题，绝不清空全局生词本。
+    if (!pool && o.clearBooks !== false) { wrongBook = []; }
     updateBookUI(); updateSidebar();
     if (shuffledWords.length) loadNextWord(); else renderIdle();
     updateStats(); saveState();
@@ -183,6 +196,7 @@
     clearInterval(timerInterval);
     currentIndex = currentIndex % shuffledWords.length;
     currentWord = shuffledWords[currentIndex];
+    viewing = false; suspended = null;
     typed = ''; isAnswered = false; lastResult = null;
     newWordRetry = false; replaceRevealed = false;
     resultArea.innerHTML = '';
@@ -245,28 +259,28 @@
   // 逐键写缓冲：用 loose()（不 trim），否则空格会被丢掉，"carbon dioxide" 拼不出来。
   // 空格 / 连字符必须原样进入缓冲，trim 与空白折叠只在提交判定时做（同原站）。
   function acceptChar(raw) {
-    if (!currentWord || (isAnswered && !newWordRetry)) return;
+    if (navigating || restoring || !currentWord || (isAnswered && !newWordRetry)) return;
     const ch = C.loose(raw);
     if (!ch) return;                                   // 白名单外字符直接吞掉
     beginNewWordRetry();
     const cap = prep(currentWord).cells.length;
     if (typed.length >= cap) return;                   // 长度硬上限（同原站 maxLength）
     typed += ch;
-    syncInput(); renderSlots();
+    syncInput(); renderSlots(); saveState();
   }
 
   function deleteChar() {
-    if (!currentWord || (isAnswered && !newWordRetry)) return;
-    if (replaceRevealed) { beginNewWordRetry(); syncInput(); renderSlots(); return; }
+    if (navigating || restoring || !currentWord || (isAnswered && !newWordRetry)) return;
+    if (replaceRevealed) { beginNewWordRetry(); syncInput(); renderSlots(); saveState(); return; }
     const floor = hintEnabled ? 1 : 0;
     if (typed.length <= floor) return;
     typed = typed.slice(0, -1);
-    syncInput(); renderSlots();
+    syncInput(); renderSlots(); saveState();
   }
 
   // 手机 IME / 粘贴：以 input 为准，但提示开启时首字母锁定（修正原站正则注入缺陷 3）
   function adoptExternal(value) {
-    if (!currentWord) { typed = ''; return; }
+    if (navigating || restoring || !currentWord) { return; }
     beginNewWordRetry();
     const cap = prep(currentWord).cells.length;
     // 用 loose() 而非 normalize()：手机 IME 逐字符触发 input，
@@ -278,12 +292,12 @@
       else if (v[0] !== hint) v = (hint + v).slice(0, cap);
     }
     typed = v;
-    syncInput(); renderSlots();
+    syncInput(); renderSlots(); saveState();
   }
 
   // ---------- 提交 ----------
   function submitAnswer() {
-    if (!currentWord || isAnswered) return;
+    if (navigating || restoring || !currentWord || isAnswered) return;
     const r = C.judge(typed, currentWord.word);
     if (r.status === 'short') {
       resultArea.innerHTML = `<span class="warn">⏳ 还差 ${r.target.length - r.input.length} 个字母</span>`;
@@ -300,7 +314,7 @@
         : `❌ 仍需巩固，正确拼写：${currentWord.word}。可继续重拼。`;
       answerInput.disabled = false;
       replaceRevealed = true;
-      renderSlots(); syncInput();
+      renderSlots(); syncInput(); saveState();
       if (MOBILE) { answerInput.focus(); answerInput.select(); }
       return;
     }
@@ -318,7 +332,7 @@
     } else {
       wrongTotal++;
       C.playWrong();
-      resultArea.innerHTML = `<span class="bad">❌ 错误，正确拼写：<strong>${currentWord.word}</strong></span>`;
+      resultArea.innerHTML = `<span class="bad">❌ 错误，正确拼写：<strong>${esc(currentWord.word)}</strong></span>`;
       addToWrongBook(currentWord);
       bumpMastery(currentWord.gk, -99);
     }
@@ -338,6 +352,7 @@
   }
 
   function moveToNextWord() {
+    if (viewing) { viewing = false; suspended = null; restore().then(saveState); return; }
     if (!isAnswered) return;
     currentIndex++;
     if (currentIndex >= shuffledWords.length) {
@@ -348,6 +363,7 @@
 
   // 跳过：原站不计错、不留痕（缺陷 4）。这里按"未掌握"入错题本，让练习闭环成立。
   function skipWord() {
+    if (viewing) { moveToNextWord(); return; }
     if (!currentWord) return;
     clearInterval(timerInterval);
     if (!isAnswered) { addToWrongBook(currentWord); updateBookUI(); }
@@ -365,7 +381,7 @@
     answerInput.disabled = true;
     wrongTotal++; completedCount++;
     C.playWrong();
-    resultArea.innerHTML = `<span class="bad">⏰ 时间到！正确拼写：<strong>${currentWord.word}</strong></span>`;
+    resultArea.innerHTML = `<span class="bad">⏰ 时间到！正确拼写：<strong>${esc(currentWord.word)}</strong></span>`;
     addToWrongBook(currentWord);
     renderSlots(); showExample(); C.speak(currentWord.word);
     updateBookUI(); updateStats(); saveState(); updateSidebar();
@@ -375,25 +391,34 @@
   // ---------- 错题本 / 生词本 ----------
   const inList = (list, gk) => list.find(w => w.gk === gk);
 
+  function wrongRecords(w = currentWord) {
+    const book = w?.bookId || 'ielts';
+    if (book === B.active) return { list: wrongBook, save: list => { wrongBook = list; } };
+    const key = B.stateKey(activeUserId, book), state = C.store.get(key, {}) || {};
+    return { list: state.wrongBook || [], save: list => C.store.set(key, { ...state, wrongBook: list }) };
+  }
   function addToWrongBook(w) {
-    if (!inList(wrongBook, w.gk)) wrongBook.push({ ...w, streak: 0 });
-    // 已会的就不算错：若已在生词本，保留，让用户自己决定
+    const records = wrongRecords(w);
+    if (!inList(records.list, w.gk)) records.list.push({ ...w, streak: 0 });
+    records.save(records.list);
   }
 
   function bumpMastery(gk, delta) {
-    const item = inList(wrongBook, gk);
+    const records = wrongRecords();
+    const item = inList(records.list, gk);
     if (!item) return false;
     item.streak = Math.max(0, (item.streak || 0) + (delta > 0 ? 1 : 0));
     if (delta < 0) item.streak = 0;
     if (item.streak >= MASTERY_TO_CLEAR) {
-      wrongBook = wrongBook.filter(x => x.gk !== gk);
+      records.save(records.list.filter(x => x.gk !== gk));
       return true;
     }
+    records.save(records.list);
     return false;
   }
 
   function addToNewBook() {
-    if (!currentWord) return;
+    if (navigating || restoring || !currentWord) return;
     if (!inList(newWordBook, currentWord.gk)) {
       newWordBook.push({ ...currentWord });
       updateBookUI(); saveState(); updateSidebar();
@@ -411,7 +436,7 @@
     lastResult = { status: 'wrong', cellStates: targetCells().map(() => 'wrong') };
     answerInput.disabled = false;
     resultArea.textContent = '已计为答错并加入生词本。直接输入可重新拼写，回车进入下一词。';
-    syncInput(); renderSlots(); showExample(); C.speak(currentWord.word);
+    syncInput(); renderSlots(); saveState(); showExample(); C.speak(currentWord.word);
     updateBookUI(); updateStats(); saveState(); updateSidebar();
     if (MOBILE) { answerInput.focus(); answerInput.select(); }
     else if (document.activeElement) document.activeElement.blur();
@@ -427,18 +452,18 @@
   }
 
   function chipHTML(w, kind) {
-    return `<div class="word-chip" data-gk="${w.gk}" data-kind="${kind}">
-      <b>${w.word}</b><span>${w.meaning}</span><span class="x" data-del="${w.gk}" data-kind="${kind}">✕</span></div>`;
+    return `<div class="word-chip" data-gk="${esc(w.gk)}" data-kind="${kind}">
+      <b>${esc(w.word)}</b><span>${esc(w.meaning)}</span><small>${esc(w.bookName || "雅思核心词汇")}</small><span class="x" data-del="${esc(w.gk)}" data-kind="${kind}">✕</span></div>`;
   }
 
   function updateBookUI() {
     wrongBookCount.textContent = wrongBook.length;
-    newWordCount.textContent = newWordBook.length;
+    newWordCount.textContent = B.groupWords(newWordBook).length;
     wrongList.innerHTML = wrongBook.length
       ? wrongBook.map(w => chipHTML(w, 'wrong')).join('')
       : '<span class="empty-note">暂无错题</span>';
     newWordList.innerHTML = newWordBook.length
-      ? newWordBook.map(w => chipHTML(w, 'new')).join('')
+      ? B.groupWords(newWordBook).map(group => '<div class="word-group"><strong>' + esc(group.word) + '</strong>' + group.entries.map(w => chipHTML(w, 'new')).join('') + '</div>').join('')
       : '<span class="empty-note">暂无生词</span>';
   }
 
@@ -460,22 +485,25 @@
   }
 
   function jumpTo(gk) {
-    const ch = parseInt(String(gk).split(':')[0].replace('ch', ''), 10);
-    const target = (wrongBook.concat(newWordBook)).find(w => w.gk === gk);
+
+    const target = (wrongBook.concat(newWordBook, currentVocabulary)).find(w => w.gk === gk);
     if (!target) return;
     const openWord = () => {
+      if (!viewing) { saveState(); suspended = C.store.get(B.stateKey(activeUserId), null); }
+      viewing = true;
       closeSidebar();
+      clearInterval(timerInterval);
+      newWordRetry = false; replaceRevealed = false;
       currentWord = target;
       isAnswered = true;
       lastResult = null;                 // 不给对错色，纯查看
       typed = prep(target).target;       // 槽位直接展示完整拼写
-      resultArea.innerHTML = `<span class="hintline">📖 查看模式 · 本词未作答 · 第 ${ch} 章</span>`;
+      resultArea.innerHTML = `<span class="hintline">📖 查看模式 · 本词未作答 · ${esc(target.bookName || "雅思核心词汇")}</span>`;
       chineseDisplay.textContent = target.meaning;
       updateModeIndicator();
-      syncInput(); renderSlots(); showExample(); C.speak(target.word);
+      syncInput(); renderSlots(); saveState(); showExample(); C.speak(target.word);
     };
-    if (ch === currentChapter) openWord();
-    else switchChapter(ch).then(openWord).catch(err => { resultArea.textContent = err.message; });
+    openWord();
   }
 
   // ---------- 侧边词表 ----------
@@ -490,9 +518,9 @@
       let icon = '<span class="status-icon" style="color:var(--correct);">○</span>';
       if (inList(wrongBook, w.gk)) icon = '<span class="status-icon" style="color:var(--wrong);">✗</span>';
       else if (inList(newWordBook, w.gk)) icon = '<span class="status-icon" style="color:var(--warn);">★</span>';
-      return `<div class="sidebar-item" data-gk="${w.gk}">${icon}
-        <span class="word-text">${w.word}</span>
-        <span class="meaning-text">${w.meaning}</span></div>`;
+      return `<div class="sidebar-item" data-gk="${esc(w.gk)}">${icon}
+        <span class="word-text">${esc(w.word)}</span>
+        <span class="meaning-text">${esc(w.meaning)}</span></div>`;
     }).join('') || '<span class="empty-note">无匹配结果</span>';
   }
 
@@ -505,16 +533,17 @@
   });
 
   // ---------- 计时 / 每日目标 ----------
-  function startTimer() {
+  function startTimer(savedRemaining) {
     clearInterval(timerInterval);
-    if (!timerEnabled) return;
-    let remaining = timerDuration;
+    if (!timerEnabled || newWordRetry || viewing) return;
+    let remaining = typeof savedRemaining === 'number' ? savedRemaining : timerDuration;
     timerSeconds.textContent = remaining;
     timerSeconds.classList.remove('urgent');
     timerInterval = setInterval(() => {
-      if (flashActive) return;
+      if (flashActive || navigating || restoring) return;
       remaining--;
       timerSeconds.textContent = remaining;
+      saveState();
       if (remaining <= 3) timerSeconds.classList.add('urgent');
       if (remaining <= 0) { clearInterval(timerInterval); handleTimeout(); }
     }, 1000);
@@ -635,8 +664,8 @@
   function showReport() {
     const total = correctTotal + wrongTotal;
     const acc = total ? Math.round((correctTotal / total) * 100) : 0;
-    modal(`<h2>🎉 本轮完成</h2>
-      <p>${reviewPool ? '错题+生词复习' : `第 ${currentChapter} 章 · ${chapterTitle}`}</p>
+    const report = modal(`<h2>🎉 本轮完成</h2>
+      <p>${trainingKind === 'flash' ? '闪过学习 · 拼写巩固' : reviewPool ? '错题+全局生词复习' : `第 ${currentChapter} 章 · ${esc(chapterTitle)}`}</p>
       <div class="report-grid">
         <div class="report-cell"><div class="v" style="color:var(--correct);">${correctTotal}</div><div class="l">答对</div></div>
         <div class="report-cell"><div class="v" style="color:var(--wrong);">${wrongTotal}</div><div class="l">答错</div></div>
@@ -644,8 +673,9 @@
       </div>
       <p style="font-size:.82rem;">错题本剩 ${wrongBook.length} 词 · 生词本 ${newWordBook.length} 词</p>
       <div class="actions"><button type="button" id="rClose">继续</button>
-      <button class="primary" type="button" id="rReview">📚 只练错词</button></div>`)
-      .querySelector('#rReview').addEventListener('click', ev => {
+      <button class="primary" type="button" id="rReview">📚 复习错题与生词</button></div>`);
+    report.querySelector('#rClose').addEventListener('click', () => report.remove());
+    report.querySelector('#rReview').addEventListener('click', ev => {
         ev.target.closest('.modal').remove();
         startReview();
       });
@@ -681,73 +711,105 @@
 
   // ---------- 持久化 ----------
   function saveState() {
-    C.store.set(C.userStateKey(activeUserId), {
-      chapter: currentChapter, globalMode,
+    if (restoring || navigating) return;
+    if (!suspended && persistedQueue !== shuffledWords) {
+      C.store.set(B.queueKey(activeUserId), shuffledWords);
+      persistedQueue = shuffledWords;
+    }
+    C.store.set(B.stateKey(activeUserId), suspended || {
+      chapter: currentChapter, globalMode, currentMode,
       correctTotal, wrongTotal, completedCount, currentIndex,
-      wrongBook: wrongBook.map(w => ({ ...w })),
-      newWordBook: newWordBook.map(w => ({ ...w })),
-      hintEnabled, timerEnabled, timerDuration,
-      dailyGoal, dailyCount, today: todayStr,
-      history: dayHistory,        // { 'YYYY-MM-DD': 答对词数 }，按 HEATMAP_KEEP_DAYS 裁剪
+      wrongBook, hintEnabled, timerEnabled, timerDuration,
+      queueKey: B.queueKey(activeUserId), review: !!reviewPool, trainingKind,
+      typed, isAnswered, lastResult, newWordRetry, replaceRevealed,
+      resultText: resultArea.textContent, remaining: Number(timerSeconds.textContent),
+      flashOffsets: Object.fromEntries(flashOffsets), flashSessions,
+    });
+    C.store.set(B.globalKey(activeUserId), {
+      newWordBook, dailyGoal, dailyCount, today: todayStr, history: dayHistory,
     });
   }
 
-  function restore() {
-    const s = C.store.get(C.userStateKey(activeUserId), null);
-    if (!s) { chapterSelect.value = '1'; dayHistory = {}; renderHeatmap(); return switchChapter(1); }
-    globalMode = s.globalMode || 'random';
-    hintEnabled = !!s.hintEnabled; timerEnabled = !!s.timerEnabled;
-    timerDuration = s.timerDuration || 10;
-    dailyGoal = s.dailyGoal || 50;
-    // 本地日期键。原先用 toISOString().slice(0,10)（UTC），东八区 00:00–08:00
-    // 之间会算成前一天：目标在早上八点才重置，日历格也会整体错位一天。
-    todayStr = C.dateKey();
-    dailyCount = (s.today === todayStr) ? (s.dailyCount || 0) : 0;
-    // 日历存档。旧版本没有 history 字段，用当日 dailyCount 播种一次近似值；
-    // 因 dailyCount 达标后会归零，这只是下界，精确累计从本版本起算。
-    dayHistory = (s.history && typeof s.history === 'object' && !Array.isArray(s.history))
-      ? { ...s.history } : {};
-    if (!dayHistory[todayStr] && dailyCount > 0) dayHistory[todayStr] = dailyCount;
-    pruneHistory();
-    renderHeatmap();
-    wrongBook = Array.isArray(s.wrongBook) ? s.wrongBook : [];
-    newWordBook = Array.isArray(s.newWordBook) ? s.newWordBook : [];
-    document.querySelectorAll('.mode-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.mode === globalMode));
-    hintToggle.classList.toggle('active', hintEnabled);
-    timerToggle.classList.toggle('active', timerEnabled);
-    timerDisplay.style.display = timerEnabled ? 'flex' : 'none';
-    updateGoalDisplay(); updateBookUI();
-    return switchChapter(s.chapter || 1).then(() => {
-      correctTotal = s.correctTotal || 0;
-      wrongTotal = s.wrongTotal || 0;
-      completedCount = s.completedCount || 0;
-      currentIndex = s.currentIndex || 0;
-      shuffledWords = C.shuffle(currentVocabulary);
-      currentIndex = Math.min(currentIndex, Math.max(shuffledWords.length - 1, 0));
-      if (shuffledWords.length) {
-        currentWord = shuffledWords[currentIndex];
-        loadNextWord();
+  async function restore() {
+    restoring = true;
+    clearInterval(timerInterval);
+    try {
+      const s = C.store.get(B.stateKey(activeUserId), {}) || {};
+      const g = C.store.get(B.globalKey(activeUserId), {}) || {};
+      globalMode = s.globalMode || 'random';
+      hintEnabled = !!s.hintEnabled; timerEnabled = !!s.timerEnabled;
+      timerDuration = s.timerDuration || 10;
+      dailyGoal = g.dailyGoal || 50;
+      todayStr = C.dateKey();
+      dailyCount = g.today === todayStr ? (g.dailyCount || 0) : 0;
+      dayHistory = g.history && typeof g.history === 'object' ? { ...g.history } : {};
+      if (!dayHistory[todayStr] && dailyCount) dayHistory[todayStr] = dailyCount;
+      wrongBook = Array.isArray(s.wrongBook) ? s.wrongBook : [];
+      newWordBook = Array.isArray(g.newWordBook) ? g.newWordBook : [];
+      flashOffsets = new Map(Object.entries(s.flashOffsets || {}));
+      flashSessions = s.flashSessions || {};
+      if (s.flashSession && !flashSessions[s.flashSession.chapter]) flashSessions[s.flashSession.chapter] = s.flashSession;
+      pruneHistory(); renderHeatmap(); updateGoalDisplay(); updateBookUI();
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === globalMode));
+      hintToggle.classList.toggle('active', hintEnabled); timerToggle.classList.toggle('active', timerEnabled);
+      timerDisplay.style.display = timerEnabled ? 'flex' : 'none';
+      const chapter = C.CHAPTERS.some(c => c.id === s.chapter) ? s.chapter : C.CHAPTERS[0].id;
+      await switchChapter(chapter);
+      correctTotal = s.correctTotal || 0; wrongTotal = s.wrongTotal || 0; completedCount = s.completedCount || 0;
+      const queue = s.queueKey ? C.store.get(s.queueKey, null) : s.queue;
+      shuffledWords = Array.isArray(queue) && queue.length ? queue : C.shuffle(currentVocabulary);
+      persistedQueue = s.queueKey && Array.isArray(queue) ? shuffledWords : null;
+      currentIndex = Math.min(s.currentIndex || 0, Math.max(0, shuffledWords.length - 1));
+      reviewPool = s.review ? shuffledWords : null;
+      trainingKind = s.trainingKind || (s.review ? 'review' : 'chapter');
+      loadNextWord();
+      if (Array.isArray(queue) && queue.length) {
+        typed = s.typed || ''; isAnswered = !!s.isAnswered;
+        lastResult = s.lastResult || null; newWordRetry = !!s.newWordRetry; replaceRevealed = !!s.replaceRevealed;
+        currentMode = s.currentMode || currentMode;
+        chineseDisplay.textContent = currentMode === 'chinese' ? currentWord.meaning : '🔊 听音拼写';
+        updateModeIndicator(); resultArea.textContent = s.resultText || '';
+        answerInput.disabled = isAnswered && !newWordRetry;
+        syncInput(); renderSlots();
+        if (isAnswered || newWordRetry) { clearInterval(timerInterval); showExample(); }
+        else if (timerEnabled) startTimer(s.remaining > 0 ? s.remaining : timerDuration);
       }
-    });
+      updateStats();
+    } finally { restoring = false; }
   }
 
   // ---------- 事件绑定 ----------
   function bindEvents() {
-    $('flashStudyBtn').addEventListener('click', () => {
-      if (flashActive || !currentVocabulary.length) return;
-      const key = `${activeUserId}:${currentChapter}`;
-      const offset = flashOffsets.get(key) || 0;
-      const batch = currentVocabulary.slice(offset, offset + 10);
+    $('bookSelect').addEventListener('change', async () => {
+      clearInterval(timerInterval); saveState(); navigating = true;
+      try { B.select($('bookSelect').value, activeUserId); await B.flush(); location.reload(); }
+      catch (e) { resultArea.textContent = e.message; }
+    });
+    $('manageBooks').addEventListener('click', async e => {
+      e.preventDefault(); clearInterval(timerInterval); saveState(); navigating = true;
+      try { await B.flush(); location.href = 'books.html'; } catch (err) { resultArea.textContent = err.message; }
+    });
+
+    $('flashStudyBtn').addEventListener('click', async () => {
+      if (flashActive || navigating || restoring || !currentVocabulary.length) return;
+      if (viewing) await restore();
+      const key = String(currentChapter);
+      const rawOffset = Number(flashOffsets.get(key)) || 0;
+      const offset = rawOffset < currentVocabulary.length ? rawOffset : 0;
+      const batch = flashSession && flashSession.chapter === currentChapter ? flashSession.words : currentVocabulary.slice(offset, offset + 10);
+      const resumed = flashSession && flashSession.chapter === currentChapter ? flashSession : null;
       flashActive = true;
       window.VocabFlash.open(batch, {
         chapter: currentChapter,
-        onClose: () => { flashActive = false; },
+        resume: resumed,
+        onProgress: progress => { flashSession = { ...progress, chapter: currentChapter, words: batch }; flashSessions[key] = flashSession; saveState(); },
+        onClose: () => { flashActive = false; saveState(); },
         onComplete: pool => {
-          flashActive = false;
+          flashActive = false; flashSession = null; delete flashSessions[key];
           flashOffsets.set(key, offset + batch.length >= currentVocabulary.length ? 0 : offset + batch.length);
+          saveState();
           if (pool.length) {
-            resetAndStart(pool);
+            resetAndStart(pool, { kind: 'flash' });
             // 返回桌面拼写通道，避免 Enter 再次激活入口按钮。
             if (!MOBILE && document.activeElement) document.activeElement.blur();
           }
@@ -783,16 +845,19 @@
 
     setGoalBtn.addEventListener('click', setGoalDialog);
     chapterSelect.addEventListener('change', () => {
-      switchChapter(parseInt(chapterSelect.value, 10)).then(() => {
+      clearInterval(timerInterval);
+      switchChapter(parseInt(chapterSelect.value, 10)).then(data => {
+        if (!data) return;
         resetAndStart(null, { clearBooks: false });
       }).catch(e => { resultArea.textContent = e.message; });
     });
 
     userSelect.addEventListener('change', () => {
+      clearInterval(timerInterval); saveState(); navigating = true;
       activeUserId = userSelect.value;
       C.saveUsers(users, activeUserId);
       C.store.set('ivocab-active-user', activeUserId);
-      restore().then(() => { resetAndStart(); });
+      B.flush().then(() => location.reload()).catch(e => { resultArea.textContent = e.message; });
     });
     addUserBtn.addEventListener('click', addUserDialog);
 
@@ -825,7 +890,7 @@
     // 不设任何字母快捷键 —— 拼写是本页唯一主交互，任何字母劫持都会直接打断输入
     // （曾因 r/s 被劫持为"重开/词表"导致无法输入，见 README 修复记录）。
     document.addEventListener('keydown', e => {
-      if (flashActive) return;
+      if (flashActive || navigating || restoring) return;
       if (modalHost.childElementCount) {           // 弹窗打开时不抢键
         if (e.key === 'Escape') modalHost.lastElementChild.remove();
         return;
@@ -855,5 +920,5 @@
     list.parentElement.querySelector('.book-header span:last-child').textContent = hidden ? '▼' : '▶';
   }
 
-  boot();
+  B.init().then(boot).catch(e => { resultArea.textContent = e.message; });
 })();

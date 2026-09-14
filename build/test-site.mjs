@@ -211,9 +211,10 @@ console.log('\n=== A2. 学习日历内核（TZ 钉死 Asia/Shanghai）===');
 // ==================== B. 静态完整性 ====================
 console.log('\n=== B. 静态完整性 ===');
 const pages = [
-  { html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/flash.js'] },
-  { html: 'site/handout.html', js: ['site/assets/core.js', 'site/assets/browse.js'] },
+  { html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/quiz.js', 'site/assets/flash.js'] },
+  { html: 'site/handout.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/browse.js'] },
 ];
+pages.push({ html: 'site/books.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js'] });
 const allSrc = [];
 for (const pg of pages) {
   const htmlPath = path.join(ROOT, pg.html);
@@ -224,6 +225,7 @@ for (const pg of pages) {
   const declared = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
   // JS 里以 innerHTML 模板动态生成的 id 也算"已声明"（如弹窗内元素）
   const dynamic = new Set([...js.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+  for (const m of js.matchAll(/\.id\s*=\s*['"]([^'"]+)['"]/g)) dynamic.add(m[1]);
   const used = new Set([
     ...js.matchAll(/\$\('([^']+)'\)/g).map(m => m[1]),
     ...js.matchAll(/getElementById\('([^']+)'\)/g).map(m => m[1]),
@@ -248,7 +250,7 @@ for (const pg of pages) {
       allSrc.filter(s => !s.includes('<!DOCTYPE')).join('\n')));
   ok('未用 fetch 读取本地 data/（file:// 下会被拒）', !/fetch\(['"`]data\//.test(all));
   const css = await readFile(path.join(ROOT, 'site', 'assets', 'app.css'), 'utf8');
-  ok('CSS 无残缺颜色值', !/#[0-9a-fA-F]*[g-zG-Z]/.test(css.replace(/#[0-9a-fA-F]{3,8}\b/g, '')));
+  ok('CSS 无残缺颜色值', [...css.matchAll(/:\s*(#[0-9a-zA-Z]+)\b/g)].every(m => /^#(?:[a-f\d]{3}|[a-f\d]{4}|[a-f\d]{6}|[a-f\d]{8})$/i.test(m[1])));
   ok('CSS 括号配平', (css.match(/\{/g) || []).length === (css.match(/\}/g) || []).length,
      `${(css.match(/\{/g) || []).length} 规则块`);
 
@@ -280,7 +282,7 @@ for (const pg of pages) {
 
     // 收集 class：静态 HTML + JS 模板串（.slot / .card 等由 JS 生成）
     const sources = ['site/index.html', 'site/handout.html',
-                     'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/core.js'];
+                     'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/books.html'];
     const used = new Map();   // class -> 来源
     for (const s of sources) {
       const src = await readFile(path.join(ROOT, s), 'utf8');
@@ -453,11 +455,19 @@ function analyze(file) {
            brightShare: bright / (Math.ceil(h / 5) * Math.ceil(w / 5)) };
 }
 
+// 陈旧截图不是当前代码的浏览器证据。只读取晚于全部相关页面源码的 PNG。
+const shotSources = ['site/index.html', 'site/handout.html', 'site/books.html',
+  'site/selftest.html', 'site/sitetest.html', 'site/assets/core.js', 'site/assets/quiz.js',
+  'site/assets/browse.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/assets/app.css'];
+const newestSource = Math.max(...await Promise.all(shotSources.map(async f => (await stat(path.join(ROOT, f))).mtimeMs)));
+async function usableShot(file) {
+  return await exists(file) && (await stat(file)).mtimeMs >= newestSource;
+}
 const shots = ['quiz.png', 'handout.png'];
 for (const name of shots) {
   const f = path.join(ROOT, '.shots', name);
   let s;
-  if (!(await exists(f))) { skip(`${name} 暗色与渲染分析（4 项）`, `缺 .shots/${name}，` + NEED_SHOT); continue; }
+  if (!(await usableShot(f))) { skip(`${name} 暗色与渲染分析（4 项）`, `缺少或陈旧的 .shots/${name}，` + NEED_SHOT); continue; }
   try { s = analyze(f); } catch (e) { ok(`${name} 解码`, false, e.message); continue; }
   console.log(`  ${name}: ${s.w}x${s.h}  平均亮度 ${s.mean.toFixed(1)}  σ ${s.sd.toFixed(1)}` +
               `  色块 ${s.colors}  主色 ${(s.topShare * 100).toFixed(1)}%  近白像素 ${(s.brightShare * 100).toFixed(1)}%`);
@@ -474,8 +484,8 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 {
   const f = path.join(ROOT, '.shots', 'selftest.png');
   let img = null;
-  if (!(await exists(f))) {
-    skip('core.js 在真实浏览器 file:// 下的自检（LED 像素回读）', '缺 .shots/selftest.png，' + NEED_SHOT);
+  if (!(await usableShot(f))) {
+    skip('core.js 在真实浏览器 file:// 下的自检（LED 像素回读）', '缺少或陈旧的 .shots/selftest.png，' + NEED_SHOT);
   } else {
     try { img = decodePNG(require('fs').readFileSync(f)); }
     catch (e) { ok('selftest.png 可解码', false, e.message); }
@@ -512,7 +522,7 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 // ==================== F. 语法解析（含此前未覆盖的 quiz.js / browse.js）====================
 console.log('\n=== F. JS 语法解析 ===');
 {
-  const jsFiles = ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js'];
+  const jsFiles = ['site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js', 'site/assets/books.js', 'site/assets/library.js'];
   for (const f of jsFiles) {
     const src = await readFile(path.join(ROOT, f), 'utf8');
     try { new vm.Script(src, { filename: f }); ok(`${f} 语法正确`, true, `${(src.length / 1024).toFixed(1)} KB`); }
@@ -536,8 +546,8 @@ console.log('\n=== G. 整页启动自检（解码 sitetest.png，需 --allow-fil
 {
   const f = path.join(ROOT, '.shots', 'sitetest.png');
   let img = null;
-  if (!(await exists(f))) {
-    skip('整页启动与键盘/日历行为自检（LED 像素回读）', '缺 .shots/sitetest.png，' + NEED_SHOT);
+  if (!(await usableShot(f))) {
+    skip('整页启动与键盘/日历行为自检（LED 像素回读）', '缺少或陈旧的 .shots/sitetest.png，' + NEED_SHOT);
   } else {
     try { img = decodePNG(require('fs').readFileSync(f)); }
     catch (e) { ok('sitetest.png 可解码', false, e.message); }
