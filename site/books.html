@@ -6,6 +6,8 @@
 <div class="library-actions"><button id="templateBtn" type="button">下载 CSV 模板</button><label>选择文件 <input id="bookFile" type="file" accept=".csv,.tsv,.json"></label></div>
 <div id="importForm" hidden><label>词书名称 <input id="bookName" maxlength="100"></label><label>导入方式 <select id="importTarget"><option value="">新建词书</option></select></label>
 <div class="library-fields" id="fieldMap"></div><button id="previewBtn" type="button">预览转换结果</button><div id="importPreview"></div><button id="importBtn" class="primary" type="button" disabled>确认导入</button></div></section>
+<section><h2>导出生词本</h2><p id="exportUserLabel"></p><p>导出当前用户跨词书保存的全部生词，保留不同来源的释义、例句和词条拓展。JSON 文件可在上方作为独立词书重新导入。</p><button id="exportNewWordsBtn" type="button">导出生词本 JSON</button></section>
 <section><h2>备份与恢复</h2><p>备份包含本机全部用户的词书、进度和生词本。恢复会覆盖备份中同名的数据项。</p><div class="library-actions"><button id="backupBtn" type="button">导出完整备份</button><label>恢复备份 <input id="backupFile" type="file" accept=".json"></label></div></section>
 <p id="libraryStatus" role="status" aria-live="polite"></p></main>
-<script src="assets/core.js"></script><script src="assets/books.js"></script><script src="assets/library.js"></script></body></html>
+<script src="assets/core.js"></script><script src="assets/enrichment-data.js"></script><script src="assets/enrichment.js"></script>
+<script src="assets/books.js"></script><script src="assets/learning.js"></script><script src="assets/library.js"></script></body></html>

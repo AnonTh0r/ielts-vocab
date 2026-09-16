@@ -7,12 +7,15 @@
 (function () {
   'use strict';
   const C = window.VocabCore, B = window.VocabBooks;
-  const esc = B.esc;
+  const esc = B.esc, L = window.VocabLearning, E = window.VocabEnrichment;
   const isChoice = document.body.dataset.practice === 'choice';
   const stateKey = (uid, book = B.active) => B.stateKey(uid, book) + (isChoice ? ':choice' : '');
   const queueKey = uid => B.queueKey(uid) + (isChoice ? ':choice' : '');
   let choicePool = [], choiceOptions = [], choiceSelected = -1, knownWords = [], knownTotal = 0;
 
+  const practiceMode = isChoice ? 'choice' : 'spelling';
+  let groupStart = 0, groupCorrectBase = 0, groupWrongBase = 0, groupKnownBase = 0;
+  let attemptId = '', launch = new URLSearchParams(location.search).get('session');
   let flashSessions = {}, persistedQueue = null, trainingKind = 'chapter';
   let restoring = true, flashSession = null, navigating = false, viewing = false, suspended = null;
 
@@ -86,6 +89,7 @@
     const u = C.loadUsers();
     users = u.users; activeUserId = u.active;
     C.saveUsers(users, activeUserId);
+    L.seed(activeUserId);
     renderUsers();
     $('bookSelect').innerHTML = B.list().map(b => '<option value="' + esc(b.id) + '">' + esc(b.name) + '</option>').join('');
     $('bookSelect').value = B.active;
@@ -102,10 +106,20 @@
       speechStatus.textContent = ('speechSynthesis' in window) ? '' : '⚠️ 本浏览器不支持朗读';
     });
 
-    restore().then(() => {
+    restore().then(async () => {
+      if (launch === 'due' || launch === 'new') {
+        const action = launch; launch = null;
+        history.replaceState(null, '', location.pathname + location.hash);
+        const all = (await Promise.all(C.CHAPTERS.map(c => C.loadChapter(c.id)))).flatMap(c => c.words);
+        // Do not schedule entries removed from an updated book.
+        const available = new Map(all.map(w => [w.gk,w]));
+        const pool = action === 'due' ? L.due(activeUserId, B.active, practiceMode).filter(w=>available.has(w.gk)).map(w=>available.get(w.gk)) : L.unseen(activeUserId, all, practiceMode).slice(0, 10);
+        resetAndStart(pool, { kind: action, clearBooks: false });
+        if (!pool.length) { renderIdle(); resultArea.textContent = action === 'due' ? '当前没有到期复习词。可以返回首页学习新词。' : '当前词书在此模式下没有未学词，可以选择自由练习或等待复习。'; saveState(); }
+      }
       window.__QUIZ_RESTORED = true;
       if (shuffledWords.length && currentWord) { renderSlots(); updateStats(); saveState(); }
-      else resetAndStart();
+      else if (!reviewPool) resetAndStart();
     }).catch(e => {
       (window.__PAGE_ERRORS = window.__PAGE_ERRORS || []).push('restore: ' + e.message);
       resultArea.textContent = '无法恢复训练：' + e.message;
@@ -183,7 +197,7 @@
     trainingKind = pool ? (o.kind || 'review') : 'chapter';
     shuffledWords = pool ? C.shuffle(pool) : C.shuffle(currentVocabulary);
     currentIndex = 0; correctTotal = 0; wrongTotal = 0; completedCount = 0;
-    knownTotal = 0;
+    knownTotal = 0; groupStart = 0; groupCorrectBase = 0; groupWrongBase = 0; groupKnownBase = 0;
     // 重开章节只清本词书错题，绝不清空全局生词本。
     if (!pool && o.clearBooks !== false) { wrongBook = []; }
     updateBookUI(); updateSidebar();
@@ -194,7 +208,7 @@
   function renderIdle() {
     currentWord = null; isAnswered = false;
     if (isChoice) { choiceOptions = []; $('choiceOptions').replaceChildren(); }
-    resultArea.textContent = ''; exampleBox.style.display = 'none';
+    resultArea.textContent = ''; exampleBox.style.display = 'none'; $('learningDetails').hidden = true;
     chineseDisplay.textContent = '词库为空';
     letterSlots.innerHTML = '';
     modeText.textContent = '无可练词汇';
@@ -207,6 +221,8 @@
     currentWord = shuffledWords[currentIndex];
     viewing = false; suspended = null;
     typed = ''; isAnswered = false; lastResult = null;
+    attemptId = crypto.randomUUID();
+    $('learningDetails').hidden = true;
     newWordRetry = false; replaceRevealed = false;
     resultArea.innerHTML = '';
     exampleBox.style.display = 'none';
@@ -283,7 +299,7 @@
       const wrong = isAnswered && i === choiceSelected && !correct;
       return '<button type="button" class="choice-option' + (correct ? ' correct' : wrong ? ' wrong' : '')
         + '" data-option="' + i + '"' + (isAnswered ? ' disabled' : '') + '><span class="choice-letter">'
-        + 'ABCD'[i] + '</span><span>' + esc(meaning) + (correct ? ' ✓ 正确答案' : wrong ? ' ✕ 你的选择' : '') + '</span></button>';
+        + '1234'[i] + '</span><span>' + esc(meaning) + (correct ? ' ✓ 正确答案' : wrong ? ' ✕ 你的选择' : '') + '</span></button>';
     }).join('');
   }
 
@@ -293,6 +309,7 @@
     clearInterval(timerInterval);
     choiceSelected = selected; isAnswered = true; completedCount++;
     const correct = kind === 'answer' && choiceOptions[selected] === currentWord.meaning;
+    L.record(activeUserId, currentWord, practiceMode, correct ? 'correct' : 'wrong', attemptId);
     if (correct) {
       correctTotal++; rollDateIfNeeded(); incrementDaily(); recordDay(1);
       C.playCorrect(); bumpMastery(currentWord.gk, 1);
@@ -372,6 +389,7 @@
       return;
     }
     completedCount++;
+    if (!viewing) L.record(activeUserId, currentWord, practiceMode, r.status === 'correct' ? (hintEnabled ? 'assisted' : 'correct') : 'wrong', attemptId);
 
     if (r.status === 'correct') {
       rollDateIfNeeded();          // 跨午夜作答时先切日，否则计数会落到昨天
@@ -394,20 +412,24 @@
     showExample();
     C.speak(currentWord.word);
     updateBookUI(); updateStats(); saveState(); updateSidebar();
-    if (completedCount >= shuffledWords.length) setTimeout(showReport, 600);
+    // Keep feedback visible; the next action opens the group report.
   }
 
   function showExample() {
-    if (!currentWord || !currentWord.exEN) return;
-    exampleEN.textContent = `“${currentWord.exEN}”`;
-    exampleCN.textContent = currentWord.exCN || '';
-    exampleBox.style.display = 'block';
+    if (!currentWord) return;
+    if (currentWord.exEN || currentWord.exCN) {
+      exampleEN.textContent = currentWord.exEN ? '“' + currentWord.exEN + '”' : '';
+      exampleCN.textContent = currentWord.exCN || ''; exampleBox.style.display = 'block';
+    }
+    const details = $('learningDetails'); details.hidden = false;
+    details.innerHTML = '<div class="mastery-lines">' + L.describe(activeUserId,currentWord).map(line=>'<p>'+esc(line)+'</p>').join('') + '</div>'
+      + '<details class="answer-enrichment"><summary>查看搭配、写作替换、听力辨析与熟词生义</summary>' + E.render(currentWord) + '<a href="handout.html#' + currentWord.chapter + '" target="_blank" rel="noopener">在词汇手册中补充词条</a></details>';
   }
 
   function moveToNextWord() {
     if (viewing) { viewing = false; suspended = null; restore().then(saveState); return; }
     if (!isAnswered) return;
-    if (isChoice && completedCount >= shuffledWords.length) { showReport(); return; }
+    if (currentIndex - groupStart + 1 >= 10 || currentIndex >= shuffledWords.length - 1) { showReport(); return; }
     currentIndex++;
     if (currentIndex >= shuffledWords.length) {
       shuffledWords = C.shuffle(shuffledWords); currentIndex = 0; completedCount = 0;
@@ -417,17 +439,16 @@
 
   // 跳过：原站不计错、不留痕（缺陷 4）。这里按"未掌握"入错题本，让练习闭环成立。
   function skipWord() {
-    if (isChoice && (navigating || restoring)) return;
-    if (isChoice && !viewing) { if (!isAnswered) finishChoice('skip'); moveToNextWord(); return; }
+    if (navigating || restoring || !currentWord) return;
     if (viewing) { moveToNextWord(); return; }
-    if (!currentWord) return;
-    clearInterval(timerInterval);
-    if (!isAnswered) { addToWrongBook(currentWord); updateBookUI(); }
-    currentIndex++;
-    if (currentIndex >= shuffledWords.length) {
-      shuffledWords = C.shuffle(shuffledWords); currentIndex = 0; completedCount = 0;
+    if (isChoice) { if (!isAnswered) finishChoice('skip'); moveToNextWord(); return; }
+    if (!isAnswered) {
+      clearInterval(timerInterval); isAnswered = true; wrongTotal++; completedCount++;
+      addToWrongBook(currentWord); bumpMastery(currentWord.gk,-99);
+      L.record(activeUserId,currentWord,practiceMode,'wrong',attemptId);
+      resultArea.textContent = '已跳过并记录错题。'; updateBookUI(); updateStats(); saveState();
     }
-    loadNextWord();
+    moveToNextWord();
   }
 
   function handleTimeout() {
@@ -437,12 +458,13 @@
     lastResult = { status: 'wrong', cellStates: statesFor(typed) };
     answerInput.disabled = true;
     wrongTotal++; completedCount++;
+    L.record(activeUserId,currentWord,practiceMode,'wrong',attemptId);
     C.playWrong();
     resultArea.innerHTML = `<span class="bad">⏰ 时间到！正确拼写：<strong>${esc(currentWord.word)}</strong></span>`;
     addToWrongBook(currentWord);
     renderSlots(); showExample(); C.speak(currentWord.word);
     updateBookUI(); updateStats(); saveState(); updateSidebar();
-    if (completedCount >= shuffledWords.length) setTimeout(showReport, 600);
+    // Keep feedback visible; the next action opens the group report.
   }
 
   // ---------- 错题本 / 生词本 ----------
@@ -500,6 +522,7 @@
     clearInterval(timerInterval);
     if (!newWordRetry) {
       wrongTotal++; completedCount++;
+      if (!viewing) L.record(activeUserId,currentWord,practiceMode,'wrong',attemptId);
       addToWrongBook(currentWord);
       bumpMastery(currentWord.gk, -99);
       C.playWrong();
@@ -732,29 +755,42 @@
   // ---------- 统计 / 报告 ----------
   function updateStats() {
     const total = shuffledWords.length;
-    progressText.textContent = `${completedCount}/${total}`;
-    correctCountEl.textContent = correctTotal;
-    wrongCountEl.textContent = wrongTotal;
-    if (isChoice) $('knownCount').textContent = knownTotal;
-    progressFill.style.width = `${total > 0 ? (completedCount / total) * 100 : 0}%`;
+    const groupSize = Math.min(10,total - groupStart);
+    const groupDone = total ? Math.min(groupSize, currentIndex - groupStart + (isAnswered ? 1 : 0)) : 0;
+    progressText.textContent = `${groupDone}/${Math.max(0,groupSize)}`;
+    $('groupLabel').textContent = total ? `每组最多 10 词 · 第 ${Math.floor(groupStart / 10) + 1} 组 · 本轮 ${Math.min(currentIndex + (isAnswered ? 1 : 0),total)}/${total} 词` : '每组最多 10 词';
+    correctCountEl.textContent = correctTotal - groupCorrectBase;
+    wrongCountEl.textContent = wrongTotal - groupWrongBase;
+    if (isChoice) $('knownCount').textContent = knownTotal - groupKnownBase;
+    progressFill.style.width = `${groupSize > 0 ? (groupDone / groupSize) * 100 : 0}%`;
   }
 
   function showReport() {
-    const total = correctTotal + wrongTotal;
-    const acc = total ? Math.round((correctTotal / total) * 100) : 0;
-    if (isChoice && modalHost.childElementCount) return;
-    const report = modal(`<h2>🎉 本轮完成</h2>
+    const groupCorrect = correctTotal - groupCorrectBase, groupWrong = wrongTotal - groupWrongBase;
+    const total = groupCorrect + groupWrong;
+    const acc = total ? Math.round((groupCorrect / total) * 100) : 0;
+    if (modalHost.childElementCount) return;
+    clearInterval(timerInterval);
+    const hasMore = currentIndex < shuffledWords.length - 1;
+    const report = modal(`<h2>🎉 本组完成</h2>
       <p>${trainingKind === 'flash' ? '闪过学习 · 拼写巩固' : reviewPool ? '错题+全局生词复习' : `第 ${currentChapter} 章 · ${esc(chapterTitle)}`}</p>
       <div class="report-grid">
-        <div class="report-cell"><div class="v" style="color:var(--correct);">${correctTotal}</div><div class="l">答对</div></div>
-        <div class="report-cell"><div class="v" style="color:var(--wrong);">${wrongTotal}</div><div class="l">答错</div></div>
+        <div class="report-cell"><div class="v" style="color:var(--correct);">${groupCorrect}</div><div class="l">答对</div></div>
+        <div class="report-cell"><div class="v" style="color:var(--wrong);">${groupWrong}</div><div class="l">答错</div></div>
         <div class="report-cell"><div class="v" style="color:var(--accent);">${acc}%</div><div class="l">正确率</div></div>
       </div>
-      ${isChoice ? `<p>选词练习 · 熟词跳过 ${knownTotal} 词（不计正确率）</p>` : ''}
+      ${isChoice ? `<p>选词练习 · 熟词跳过 ${knownTotal - groupKnownBase} 词（不计正确率）</p>` : ''}
+      <p>答错的词约 10 分钟后进入待复习；首次答对的词从次日开始复习。识别与拼写分别安排。</p>
       <p style="font-size:.82rem;">错题本剩 ${wrongBook.length} 词 · 生词本 ${newWordBook.length} 词</p>
-      <div class="actions"><button type="button" id="rClose">继续</button>
+      <div class="actions"><button type="button" id="rClose">${hasMore ? '继续下一组' : '再练一轮'}</button>
       <button class="primary" type="button" id="rReview">📚 复习错题与生词</button></div>`);
-    report.querySelector('#rClose').addEventListener('click', () => { report.remove(); if (isChoice) resetAndStart(reviewPool, { clearBooks: false }); });
+    report.querySelector('#rClose').addEventListener('click', () => {
+      report.remove();
+      if (hasMore) {
+        groupStart = currentIndex + 1; groupCorrectBase = correctTotal; groupWrongBase = wrongTotal; groupKnownBase = knownTotal;
+        currentIndex++; loadNextWord();
+      } else resetAndStart(reviewPool, { kind: trainingKind, clearBooks: false });
+    });
     report.querySelector('#rReview').addEventListener('click', ev => {
         ev.target.closest('.modal').remove();
         startReview();
@@ -798,6 +834,7 @@
     }
     C.store.set(stateKey(activeUserId), suspended || {
       chapter: currentChapter, globalMode, currentMode,
+      groupStart, groupCorrectBase, groupWrongBase, groupKnownBase, attemptId,
       ...(isChoice ? { choiceOptions, choiceSelected, knownWords, knownTotal } : {}),
       correctTotal, wrongTotal, completedCount, currentIndex,
       wrongBook, hintEnabled, timerEnabled, timerDuration,
@@ -806,6 +843,7 @@
       resultText: resultArea.textContent, remaining: Number(timerSeconds.textContent),
       flashOffsets: Object.fromEntries(flashOffsets), flashSessions,
     });
+    if (!viewing && currentWord) C.store.set(`ivocab-last:${activeUserId}`, { bookId:B.active, mode:practiceMode, updatedAt:Date.now() });
     C.store.set(B.globalKey(activeUserId), {
       newWordBook, dailyGoal, dailyCount, today: todayStr, history: dayHistory,
     });
@@ -844,14 +882,16 @@
       await switchChapter(chapter);
       correctTotal = s.correctTotal || 0; wrongTotal = s.wrongTotal || 0; completedCount = s.completedCount || 0;
       const queue = s.queueKey ? C.store.get(s.queueKey, null) : s.queue;
-      shuffledWords = Array.isArray(queue) && queue.length ? queue : C.shuffle(currentVocabulary);
+      shuffledWords = Array.isArray(queue) && (queue.length || s.review) ? queue : C.shuffle(currentVocabulary);
       persistedQueue = s.queueKey && Array.isArray(queue) ? shuffledWords : null;
       currentIndex = Math.min(s.currentIndex || 0, Math.max(0, shuffledWords.length - 1));
       reviewPool = s.review ? shuffledWords : null;
       trainingKind = s.trainingKind || (s.review ? 'review' : 'chapter');
-      loadNextWord();
+      groupStart = s.groupStart ?? Math.floor(currentIndex / 10) * 10;
+      groupCorrectBase = s.groupCorrectBase || 0; groupWrongBase = s.groupWrongBase || 0; groupKnownBase = s.groupKnownBase || 0;
+      if (shuffledWords.length) loadNextWord(); else { renderIdle(); resultArea.textContent = s.resultText || ''; }
       if (Array.isArray(queue) && queue.length) {
-        typed = s.typed || ''; isAnswered = !!s.isAnswered;
+        typed = s.typed || ''; isAnswered = !!s.isAnswered; attemptId = s.attemptId || attemptId;
         lastResult = s.lastResult || null; newWordRetry = !!s.newWordRetry; replaceRevealed = !!s.replaceRevealed;
         currentMode = s.currentMode || currentMode;
         chineseDisplay.textContent = currentMode === 'chinese' ? currentWord.meaning : '🔊 听音拼写';
@@ -894,6 +934,7 @@
         if (!inList(known.list, currentWord.gk)) { known.list.push({ ...currentWord }); known.save(known.list); }
         newWordBook = newWordBook.filter(w => w.gk !== currentWord.gk);
         const records = wrongRecords(); records.save(records.list.filter(w => w.gk !== currentWord.gk));
+        if (!isAnswered) L.record(activeUserId,currentWord,practiceMode,'known',attemptId);
         if (!isAnswered) { knownTotal++; completedCount++; isAnswered = true; clearInterval(timerInterval); }
         updateBookUI(); updateStats(); saveState(); moveToNextWord();
       });
@@ -917,7 +958,9 @@
       const batch = flashSession && flashSession.chapter === currentChapter ? flashSession.words : currentVocabulary.slice(offset, offset + 10);
       const resumed = flashSession && flashSession.chapter === currentChapter ? flashSession : null;
       flashActive = true;
+      const flashEvent = crypto.randomUUID();
       window.VocabFlash.open(batch, {
+        onChoice: (word, choice, index) => L.record(activeUserId,word,'choice',choice === 'known' ? 'known' : 'seen',flashEvent+':'+index),
         chapter: currentChapter,
         resume: resumed,
         onProgress: progress => { flashSession = { ...progress, chapter: currentChapter, words: batch }; flashSessions[key] = flashSession; saveState(); },
@@ -984,6 +1027,12 @@
     $('wrongBookToggle').addEventListener('click', () => toggleList(wrongList));
     $('newWordBookToggle').addEventListener('click', () => toggleList(newWordList));
     $('clearWrongBtn').addEventListener('click', () => { wrongBook = []; updateBookUI(); saveState(); updateSidebar(); });
+    $('exportNewWordsBtn').addEventListener('click', async () => {
+      const button=$('exportNewWordsBtn');button.disabled=true;
+      try { await B.exportNewWords(activeUserId,newWordBook); }
+      catch(e) { resultArea.textContent=e.message; }
+      finally {button.disabled=false;}
+    });
     $('clearNewWordsBtn').addEventListener('click', () => { newWordBook = []; updateBookUI(); saveState(); updateSidebar(); });
     reviewBookBtn.addEventListener('click', startReview);
 
@@ -1005,7 +1054,7 @@
     // 通道 A：桌面物理键盘
     // 键盘约定与原站完全一致：字母 / 空格 / 连字符一律用于拼写，
     // 命令只保留 Enter（提交·下一题）、Backspace（删除）、Escape（关弹窗/侧栏）。
-    // 拼写模式不设字母快捷键；选词模式单独处理 A/B/C/D，避免侵入拼写输入。
+    // 拼写模式不设字母快捷键；选词模式单独处理 1/2/3/4，避免侵入拼写输入。
     // （曾因 r/s 被劫持为"重开/词表"导致无法输入，见 README 修复记录）。
     document.addEventListener('keydown', e => {
       if (flashActive || navigating || restoring) return;
@@ -1021,7 +1070,7 @@
       if (e.key === 'Escape') { if (sidebar.classList.contains('open')) closeSidebar(); return; }
       if (sidebar.classList.contains('open')) return;   // 侧栏浏览中不向答题区写字母
       if (isChoice) {
-        if (/^[abcd]$/i.test(e.key) && !e.repeat) { e.preventDefault(); finishChoice('answer', e.key.toLowerCase().charCodeAt(0) - 97); }
+        if (/^[1-4]$/.test(e.key) && !e.repeat) { e.preventDefault(); finishChoice('answer', Number(e.key) - 1); }
         return;
       }
       if (e.key === 'Backspace') { e.preventDefault(); deleteChar(); return; }

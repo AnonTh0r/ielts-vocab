@@ -10,7 +10,8 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const { IDBFactory } = require('fake-indexeddb');
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const source = {};
-for (const f of ['core', 'books', 'quiz', 'flash', 'browse', 'library', 'choice']) source[f] = await readFile(path.join(ROOT, 'site/assets/' + f + '.js'), 'utf8');
+for (const f of ['learning', 'enrichment', 'home', 'core', 'books', 'quiz', 'flash', 'browse', 'library', 'choice']) source[f] = await readFile(path.join(ROOT, 'site/assets/' + f + '.js'), 'utf8');
+source.enrichmentData = await readFile(path.join(ROOT, 'site/assets/enrichment-data.js'), 'utf8');
 const html = await readFile(path.join(ROOT, 'site/choice.html'), 'utf8');
 const chapters = {};
 for (let i = 1; i <= 22; i++) chapters[i] = await readFile(path.join(ROOT, 'site/data/ch' + i + '.js'), 'utf8');
@@ -44,7 +45,7 @@ async function page(markup = html, quiz = true, idb = database) {
   };
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
-  w.eval(source.core); w.eval(source.books);
+  w.eval(source.core); w.eval(source.enrichmentData); w.eval(source.enrichment); w.eval(source.books); w.eval(source.learning);
   await w.VocabBooks.init(); await w.VocabBooks.flush();
   if (quiz) {
     w.eval(source.flash); if (w.document.body.dataset.practice === 'choice') w.eval(source.choice); w.eval(source.quiz);
@@ -100,7 +101,7 @@ const dayBefore = p.w.__QUIZ_DEBUG().dayCount;
 answer(p); const answered = JSON.stringify(state(p));
 assert.equal(state(p).correctTotal, 1); assert.equal(state(p).completedCount, 1);
 assert.equal(p.w.__QUIZ_DEBUG().dayCount, dayBefore + 1);
-p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown', { key:'a', bubbles:true }));
+p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown', { key:'1', bubbles:true }));
 assert.equal(JSON.stringify(state(p)), answered, 'repeated answers do not score twice');
 assert.equal(options(p).filter(b => b.classList.contains('correct')).length, 1);
 assert.ok(options(p).every(b => b.disabled)); p.close(); p=await page();
@@ -122,20 +123,25 @@ p.click('[data-unmark]'); assert.equal(state(p).knownWords.length,0);
 const skipped=current(p); p.click('#skipBtn'); assert.ok(state(p).wrongBook.some(w=>w.gk===skipped.gk));
 p.click('#timerToggle'); for(let i=0;i<10;i++) p.advance(1000);
 assert.equal(state(p).isAnswered,true); assert.match(p.w.document.getElementById('resultArea').textContent,/时间到/);
-p.click('#nextBtn'); assert.match(p.w.document.getElementById('modalHost').textContent,/本轮完成/);
+p.click('#nextBtn'); assert.match(p.w.document.getElementById('modalHost').textContent,/本组完成/);
 assert.equal(state(p).completedCount,6); p.click('#rClose'); assert.equal(state(p).completedCount,0);
 assert.equal(state(p).knownTotal,0); assert.equal(state(p).currentIndex,0);
 // Looking up a word does not consume or overwrite the training question.
 const suspended=JSON.stringify(state(p)); p.click('#newWordList .word-chip');
 assert.equal(options(p).length,0); p.click('#nextBtn'); await waitFor(()=>options(p).length===4);
 assert.equal(JSON.stringify(state(p)),suspended);
-// A/B/C/D shortcuts work, but text fields and key repeat do not answer.
+// 1/2/3/4 shortcuts work, but text fields and key repeat do not answer.
 const index=state(p).choiceOptions.indexOf(current(p).meaning);
-p.w.document.getElementById('sidebarSearch').dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'ABCD'[index],bubbles:true}));
+assert.deepEqual(options(p).map(b=>b.querySelector('.choice-letter').textContent), ['1','2','3','4']);
+for (const key of ['a','b','c','d','0','5']) {
+  p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown',{key,bubbles:true}));
+  assert.equal(state(p).isAnswered,false, 'only 1-4 answer a choice question');
+}
+p.w.document.getElementById('sidebarSearch').dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'1234'[index],bubbles:true}));
 assert.equal(state(p).isAnswered,false);
-p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'ABCD'[index],repeat:true,bubbles:true}));
+p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'1234'[index],repeat:true,bubbles:true}));
 assert.equal(state(p).isAnswered,false);
-p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'ABCD'[index],bubbles:true}));
+p.w.document.dispatchEvent(new p.w.KeyboardEvent('keydown',{key:'1234'[index],bubbles:true}));
 assert.equal(state(p).correctTotal,1);
 // Same-spelling alternate meanings never become distractors; text remains inert.
 const generated=p.w.VocabChoice.options(fixture.words[1],fixture.words);

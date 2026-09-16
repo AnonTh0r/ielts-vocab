@@ -110,12 +110,16 @@
             <span class="en">“${esc(w.exEN)}”</span>
             <span class="cn">${esc(w.exCN)}</span></div>` : ''}
         ${w.root ? `<div class="root-box">📖 ${esc(w.root)}</div>` : ''}
+        <div class="mastery-lines">${window.VocabLearning.describe(C.loadUsers().active,w).map(line=>'<p>'+esc(line)+'</p>').join('')}</div>
+        ${window.VocabEnrichment.render(w)}
+        ${window.VocabEnrichment.editor(w)}
         ${w.extra ? `<div class="extra-box">🔗 ${esc(w.extra)}</div>` : ''}
       </div>
       <div class="overlay-note-area">
         <textarea class="lecture-note" id="noteBox" placeholder="在此输入讲解备注（自动保存在本机）…"
                   aria-label="讲解备注">${esc(getNote(w.gk))}</textarea>
       </div>`;
+    window.VocabEnrichment.bind(overlayContent,w);
     overlay.classList.add('active');
     C.speak(w.word);
 

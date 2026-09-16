@@ -1053,3 +1053,40 @@ body[data-practice="choice"] #chineseDisplay { font-size: clamp(2rem, 5vw, 3rem)
 @media (prefers-reduced-motion: reduce) { .mode-card { transition: none; } .mode-card:hover { transform: none; } }
 
 #homeLink { position: static; align-self: flex-start; margin-bottom: 4px; }
+/* 今日安排、词条拓展与掌握记录 */
+.today-panel { border: 1px solid var(--border-strong); border-radius: 22px; padding: 24px; text-align: left; background: var(--card-bg); }
+.home-selects, .home-actions, .resume-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.home-selects label { flex: 1; min-width: 130px; display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); }
+.today-numbers { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; margin: 24px 0; text-align: center; }
+.today-numbers div { display: flex; flex-direction: column; gap: 6px; }
+.today-numbers strong { font-size: 2rem; color: var(--accent); }
+.today-numbers span, .resume-row span { color: var(--text-secondary); font-size: .85rem; }
+.resume-row { margin: 20px 0; }
+.home-actions button { justify-content: center; }
+.today-panel button:disabled { opacity: .5; cursor: not-allowed; }
+.review-plan { border-top: 1px solid var(--border); padding: 14px 0; }
+.review-plan summary { cursor: pointer; }
+.review-plan p { line-height: 1.7; overflow-wrap: anywhere; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.group-label { color: var(--text-secondary); text-align: center; margin: 0; font-size: .85rem; }
+.learning-details { width: 100%; }
+.learning-details[hidden] { display: none; }
+.mastery-lines { border: 1px solid var(--border); padding: 12px 18px; border-radius: 14px; color: var(--text-secondary); font-size: .85rem; }
+.mastery-lines p { margin: 6px 0; }
+.word-enrichment { margin: 18px 0; padding: 18px; background: var(--panel-bg); border: 1px solid var(--border); border-radius: 16px; }
+.word-detail h4 { margin: 18px 0 6px; color: var(--accent); font-size: .9rem; }
+.word-detail p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; margin: 0; font-size: .9rem; }
+.detail-note, .detail-sources { color: var(--text-secondary); font-size: .8rem; line-height: 1.7; }
+.detail-sources a, .learning-details > a { color: var(--accent); }
+.detail-editor { margin: 18px 0; }
+.detail-editor summary { cursor: pointer; }
+.detail-editor form, .detail-editor label { display: flex; flex-direction: column; gap: 10px; }
+.detail-editor label { margin: 10px 0; font-size: .85rem; }
+.detail-editor textarea { box-sizing: border-box; width: 100%; padding: 10px; font: inherit; color: var(--text); background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; resize: vertical; }
+.detail-editor button { align-self: flex-start; }
+@media (max-width:640px) { .today-panel { padding: 16px; } .home-actions { flex-direction: column; align-items: stretch; } .today-numbers strong { font-size: 1.6rem; } }
+
+.answer-enrichment { margin: 12px 0; }
+.answer-enrichment summary { cursor: pointer; color: var(--accent); font-size: .85rem; line-height: 1.7; }
+.answer-enrichment a { color: var(--accent); }
+
+.today-panel .heatmap-panel { margin: 20px 0; text-align: left; }

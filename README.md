@@ -21,7 +21,7 @@
 ```
 site/index.html      模式选择首页
 site/spelling.html   拼写练习（槽位拼写训练）
-site/choice.html     选词练习（英文单词 → ABCD 中文释义）
+site/choice.html     选词练习（英文单词 → 1234 中文释义）
 site/handout.html    词汇手册（卡片浏览 + 详情弹窗）
 site/books.html      词书管理（上传、映射、切换、备份）
 ```
@@ -34,6 +34,13 @@ site/books.html      词书管理（上传、映射、切换、备份）
 配色为暗色，但保留原站蓝紫渐变这一识别符号。
 
 完整说明、与原站的行为差异清单、以及历次修复记录见 **[`site/README.md`](site/README.md)**。
+
+## 今日学习与词条拓展
+
+首页支持继续上次、到期复习和新学 10 词。自由练习按每组最多 10 词结算，
+识别与拼写分别记录掌握程度并安排间隔复习，旧题序和输入继续保留。
+词汇手册支持编辑常用搭配、写作替换、听力辨音与熟词生义；首批提供 10 词的带来源讲解，
+其余可自行补充或随词书导入。详见 [使用与复习规则](site/README.md)。
 
 ## 词书切换与导入
 
@@ -70,7 +77,7 @@ node build/test-site.mjs     # 验收（缺失/陈旧截图明确跳过）
 ## 验收
 
 运行 `node build/test-site.mjs` 和 `node build/test-flash.mjs`。
-词书与选词集成测试为 `build/test-books.mjs`、`build/test-choice.mjs`，临时开发依赖及运行方法见 [site/README.md](site/README.md)。
+词书与选词集成测试为 `build/test-books.mjs`、`build/test-choice.mjs`、`build/test-learning.mjs`，临时开发依赖及运行方法见 [site/README.md](site/README.md)。
 
 内核、输入规则、日历、数据与静态完整性均检查。浏览器组只读取晚于页面源码的截图，
 旧截图明确 SKIP，不能当作当前验证通过。当前词书流程已通过 DOM/IndexedDB 模拟测试，

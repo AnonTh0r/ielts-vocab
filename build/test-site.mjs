@@ -216,7 +216,10 @@ const pages = [
 ];
 pages.push({ html: 'site/books.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js'] });
 pages.push({ html: 'site/choice.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/choice.js', 'site/assets/quiz.js'] });
-pages.push({ html: 'site/index.html', js: [] });
+pages.push({ html: 'site/index.html', js: ['site/assets/core.js', 'site/assets/books.js', 'site/assets/learning.js', 'site/assets/home.js'] });
+for (const page of pages) {
+  if (page.html !== 'site/index.html') page.js.push('site/assets/learning.js', 'site/assets/enrichment.js');
+}
 const allSrc = [];
 for (const pg of pages) {
   const htmlPath = path.join(ROOT, pg.html);
@@ -285,7 +288,7 @@ for (const pg of pages) {
     const baseClasses = new Set([...base.matchAll(CLASS_RE)].map(x => x[1]));
 
     // 收集 class：静态 HTML + JS 模板串（.slot / .card 等由 JS 生成）
-    const sources = ['site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html',
+    const sources = ['site/assets/home.js', 'site/assets/learning.js', 'site/assets/enrichment.js', 'site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html',
                      'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/core.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/books.html'];
     const used = new Map();   // class -> 来源
     for (const s of sources) {
@@ -460,7 +463,7 @@ function analyze(file) {
 }
 
 // 陈旧截图不是当前代码的浏览器证据。只读取晚于全部相关页面源码的 PNG。
-const shotSources = ['site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html', 'site/books.html',
+const shotSources = ['site/assets/home.js', 'site/assets/learning.js', 'site/assets/enrichment.js', 'site/assets/enrichment-data.js', 'site/index.html', 'site/choice.html', 'site/assets/choice.js', 'site/spelling.html', 'site/handout.html', 'site/books.html',
   'site/selftest.html', 'site/sitetest.html', 'site/assets/core.js', 'site/assets/quiz.js',
   'site/assets/browse.js', 'site/assets/books.js', 'site/assets/library.js', 'site/assets/flash.js', 'site/assets/app.css'];
 const newestSource = Math.max(...await Promise.all(shotSources.map(async f => (await stat(path.join(ROOT, f))).mtimeMs)));
@@ -526,7 +529,7 @@ console.log('\n=== E. 浏览器 file:// 运行自检（解码 selftest.png 的 L
 // ==================== F. 语法解析（含此前未覆盖的 quiz.js / browse.js）====================
 console.log('\n=== F. JS 语法解析 ===');
 {
-  const jsFiles = ['site/assets/choice.js', 'site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js', 'site/assets/books.js', 'site/assets/library.js'];
+  const jsFiles = ['site/assets/home.js', 'site/assets/learning.js', 'site/assets/enrichment.js', 'site/assets/enrichment-data.js', 'site/assets/choice.js', 'site/assets/core.js', 'site/assets/quiz.js', 'site/assets/browse.js', 'site/assets/flash.js', 'site/assets/books.js', 'site/assets/library.js'];
   for (const f of jsFiles) {
     const src = await readFile(path.join(ROOT, f), 'utf8');
     try { new vm.Script(src, { filename: f }); ok(`${f} 语法正确`, true, `${(src.length / 1024).toFixed(1)} KB`); }

@@ -59,6 +59,7 @@
 
   <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
 
+  <p class="group-label" id="groupLabel"></p>
   <div class="stats">
     <span>📊 进度 <strong id="progressText">0/0</strong></span>
     <span>✅ 正确 <strong id="correctCount">0</strong></span>
@@ -85,6 +86,7 @@
     <span class="cn" id="exampleCN"></span>
   </div>
 
+  <section class="learning-details" id="learningDetails" hidden></section>
   <div class="actions">
     <button id="addNewWordBtn" type="button" title="加入生词本">📌 生词</button>
     <button id="skipBtn" type="button" title="跳过（会计入错题本）">⏭️ 跳过</button>
@@ -106,6 +108,7 @@
         <h3>📗 全局生词本 (<span id="newWordCount">0</span>)</h3><span>▼</span>
       </div>
       <div class="book-list" id="newWordList"></div>
+      <button type="button" id="exportNewWordsBtn">导出生词本 JSON</button>
       <button type="button" id="clearNewWordsBtn" style="margin-top:6px;font-size:0.75rem;">清空</button>
     </div>
   </div>
@@ -130,7 +133,8 @@
 <div id="modalHost"></div>
 
 <script src="assets/core.js"></script>
-<script src="assets/books.js"></script>
+<script src="assets/enrichment-data.js"></script><script src="assets/enrichment.js"></script>
+<script src="assets/books.js"></script><script src="assets/learning.js"></script>
 <script src="assets/flash.js"></script>
 <script src="assets/quiz.js"></script>
 </body>

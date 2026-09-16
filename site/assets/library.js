@@ -5,9 +5,9 @@
   const run = action => async () => { try { await action(); } catch (e) { status(e.message); } };
   await B.init();
   let rows = [], preview = null;
-  const labels = { word: '单词 *', meaning: '释义 *', chapter: '章节', phonetic: '音标', pos: '词性', exEN: '英文例句', exCN: '例句翻译', root: '词根', extra: '备注', id: '词条 ID' };
+  const labels = { collocations:'常用搭配', writing:'写作替换表达', listening:'听力易混词', senses:'熟词生义', sources:'参考来源', word: '单词 *', meaning: '释义 *', chapter: '章节', phonetic: '音标', pos: '词性', exEN: '英文例句', exCN: '例句翻译', root: '词根', extra: '备注', id: '词条 ID' };
   function render() {
-    $('bookList').innerHTML = B.list().map(b => `<article class="library-book"><div><strong>${esc(b.name)}</strong><p>${b.chapters.length} 章 · ${b.words ? b.words.length : 3568} 词${b.id === B.active ? ' · 当前词书' : ''}</p></div><button data-use="${esc(b.id)}" type="button">开始学习</button>${b.id !== 'ielts' ? `<button data-export="${esc(b.id)}" type="button">导出词书</button>` : ''}</article>`).join('');
+    $('bookList').innerHTML = B.list().map(b => `<article class="library-book"><div><strong>${esc(b.name)}</strong><p>${b.chapters.length} 章 · ${b.words ? b.words.length : 3568} 词${b.id === B.active ? ' · 当前词书' : ''}</p></div><button data-use="${esc(b.id)}" type="button">开始学习</button><button data-export="${esc(b.id)}" type="button">导出词库 JSON</button></article>`).join('');
     $('importTarget').innerHTML = '<option value="">新建词书</option>' + B.list().filter(b => b.id !== 'ielts').map(b => `<option value="${esc(b.id)}">更新：${esc(b.name)}</option>`).join('');
   }
   $('bookList').addEventListener('click', async e => {
@@ -15,12 +15,13 @@
       const use = e.target.closest('[data-use]'), exp = e.target.closest('[data-export]');
       if (use) { B.select(use.dataset.use); await B.flush(); location.href = 'index.html'; }
       if (exp) {
-        const b = B.list().find(x => x.id === exp.dataset.export);
-        B.download(`${b.name}.json`, JSON.stringify({ name: b.name, words: b.words.map(w => ({ ...w, chapter: b.chapters.find(c => c.id === w.chapter).title })) }, null, 2));
+        exp.disabled = true; status('正在整理词库…');
+        try { const count = await B.exportBook(exp.dataset.export); status('已生成词库文件，共 ' + count + ' 条，请查看浏览器下载。'); }
+        finally { exp.disabled = false; }
       }
     } catch (err) { status(err.message); }
   });
-  $('templateBtn').onclick = () => B.download('词书模板.csv', '\uFEFF单词,释义,章节,音标,词性,英文例句,例句翻译,词根,备注\r\napple,苹果,第一章,/ˈæpəl/,n.,I eat an apple.,我吃一个苹果。,,\r\n', 'text/csv;charset=utf-8');
+  $('templateBtn').onclick = () => B.download('词书模板.csv', '\uFEFF单词,释义,章节,音标,词性,英文例句,例句翻译,词根,备注,常用搭配,写作替换表达,听力易混词,熟词生义,参考来源\r\napple,苹果,第一章,/ˈæpəl/,n.,I eat an apple.,我吃一个苹果。,,,,,,,\r\n', 'text/csv;charset=utf-8');
   function invalidate() { preview = null; $('importBtn').disabled = true; $('importPreview').textContent = ''; }
   $('bookFile').onchange = run(async () => {
     invalidate(); rows = []; $('importForm').hidden = true; const file = $('bookFile').files[0]; if (!file) return;
@@ -54,6 +55,13 @@
     $('importBtn').disabled = true;
     await B.saveBook({ id: $('importTarget').value || `book-${crypto.randomUUID()}`, name, chapters: preview.chapters, words: preview.words });
     render(); $('importForm').hidden = true; preview = null; status('词书已保存，可以开始学习。');
+  });
+  const currentUser = window.VocabCore.loadUsers();
+  $('exportUserLabel').textContent = '当前用户：' + (currentUser.users.find(u=>u.id===currentUser.active)?.name || currentUser.active);
+  $('exportNewWordsBtn').onclick = run(async () => {
+    const button=$('exportNewWordsBtn');button.disabled=true;
+    try { const count=await B.exportNewWords(currentUser.active);status('已生成生词本文件，共 '+count+' 条来源记录，请查看浏览器下载。'); }
+    finally {button.disabled=false;}
   });
   $('backupBtn').onclick = run(() => B.backup());
   $('backupFile').onchange = run(async () => {

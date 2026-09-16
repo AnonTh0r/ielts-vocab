@@ -10,7 +10,8 @@ const { JSDOM, VirtualConsole } = require('jsdom');
 const { IDBFactory } = require('fake-indexeddb');
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const source = {};
-for (const f of ['core', 'books', 'quiz', 'flash', 'browse', 'library']) source[f] = await readFile(path.join(ROOT, 'site/assets/' + f + '.js'), 'utf8');
+for (const f of ['learning', 'enrichment', 'home', 'core', 'books', 'quiz', 'flash', 'browse', 'library']) source[f] = await readFile(path.join(ROOT, 'site/assets/' + f + '.js'), 'utf8');
+source.enrichmentData = await readFile(path.join(ROOT, 'site/assets/enrichment-data.js'), 'utf8');
 const html = await readFile(path.join(ROOT, 'site/spelling.html'), 'utf8');
 const chapters = {};
 for (let i = 1; i <= 22; i++) chapters[i] = await readFile(path.join(ROOT, 'site/data/ch' + i + '.js'), 'utf8');
@@ -44,7 +45,7 @@ async function page(markup = html, quiz = true, idb = database) {
   };
   w.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   w.HTMLDialogElement.prototype.close = function () { this.open = false; };
-  w.eval(source.core); w.eval(source.books);
+  w.eval(source.core); w.eval(source.enrichmentData); w.eval(source.enrichment); w.eval(source.books); w.eval(source.learning);
   await w.VocabBooks.init(); await w.VocabBooks.flush();
   if (quiz) {
     w.eval(source.flash); w.eval(source.quiz);

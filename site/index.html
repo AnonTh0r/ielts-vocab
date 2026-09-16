@@ -5,10 +5,34 @@
   <p class="home-eyebrow">每天一点，词汇更进一步</p>
   <h1>今天，想怎么学？</h1>
   <p class="home-intro">选择一种练习方式，继续你的词汇学习。</p>
-  <div class="mode-cards">
+  <section class="today-panel" aria-label="今日学习">
+    <div class="home-selects"><label>当前用户 <select id="homeUser" aria-label="当前用户"></select></label><label>词书 <select id="homeBook" aria-label="当前词书"></select></label><label>本次练习 <select id="homeMode"><option value="spelling">拼写</option><option value="choice">识别释义</option></select></label></div>
+    <p id="homeStatus" role="status">正在读取本机学习记录…</p>
+    <div class="today-numbers"><div><strong id="dueCount">—</strong><span>词待复习</span></div><div><strong id="unseenCount">—</strong><span>词尚未学习</span></div><div><strong id="todayCount">—</strong><span>今日答对</span></div></div>
+  <section class="heatmap-panel" id="heatmapPanel" aria-label="学习日历">
+    <div class="heatmap-head">
+      <h3>📅 学习日历 · 当前用户全部练习</h3>
+      <div class="heatmap-stats" id="heatmapStats"></div>
+    </div>
+    <div class="heatmap-scroll">
+      <div class="heatmap-months" id="heatmapMonths"></div>
+      <div class="heatmap-body">
+        <div class="heatmap-weekdays" id="heatmapWeekdays"></div>
+        <div class="heatmap-grid" id="heatmapGrid" role="img"></div>
+      </div>
+    </div>
+    <div class="heatmap-legend" id="heatmapLegend"></div>
+  </section>
+    <div class="home-actions"><button id="todayBtn" class="primary" disabled>开始今日学习</button><button id="dueBtn" disabled>复习到期词</button><button id="newBtn" disabled>新学 10 词</button></div>
+    <div class="resume-row"><button id="continueBtn" disabled>继续上次</button><span id="resumeText">暂无练习进度</span></div>
+    <p id="masterySummary"></p>
+    <details class="review-plan"><summary>查看到期词与掌握情况</summary><div id="dueList"></div></details>
+    <p class="home-note">每组最多 10 词。答错约 10 分钟后再练；答对按 1、3、7、14、30、60 天逐步复习。自评熟词不等于掌握，识别与拼写分开记录。</p>
+  </section>
+  <h2>自由练习</h2><div class="mode-cards">
     <a class="mode-card" href="spelling.html"><span class="mode-card-icon">✍️</span><h2>拼写练习</h2><p>看中文或听发音，亲手拼出英文单词。</p><span class="mode-card-action">开始拼写 →</span></a>
-    <a class="mode-card" href="choice.html"><span class="mode-card-icon">🧩</span><h2>选词练习</h2><p>看英文单词，从 A、B、C、D 中选出正确中文释义。</p><span class="mode-card-action">开始选词 →</span></a>
+    <a class="mode-card" href="choice.html"><span class="mode-card-icon">🧩</span><h2>选词练习</h2><p>看英文单词，从 1、2、3、4 中选出正确中文释义。</p><span class="mode-card-action">开始选词 →</span></a>
   </div>
   <p class="home-note">两种模式分别保存进度，共享当前用户的生词本与学习日历。<br>闪过学习可从拼写练习中进入。</p>
   <nav class="home-links" aria-label="词汇工具"><a href="books.html">📚 词书管理</a><a href="handout.html">📖 词汇手册</a></nav>
-</main></body></html>
+</main><script src="assets/core.js"></script><script src="assets/books.js"></script><script src="assets/learning.js"></script><script src="assets/home.js"></script></body></html>

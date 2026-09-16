@@ -38,6 +38,7 @@ window.VocabFlash = (function () {
     function choose(choice, expected) {
       if (closed || complete || expected !== index) return;
       clearInterval(timer);
+      if (options.onChoice) options.onChoice(words[index], choice, index);
       if (choice !== 'known') retained.push(words[index]);
       choices.push(choice); index++; remaining = 8000;
       if (index < words.length) { persist(); render(); return; }

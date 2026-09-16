@@ -44,6 +44,12 @@ window.VocabBooks = (function () {
     });
   }
   const get = (key, fallback) => values.has(key) ? clone(values.get(key)) : originalStore.get(key, fallback);
+  function records(prefix) {
+    const result = new Map();
+    try { for (let i = 0; i < localStorage.length; i++) { const key = localStorage.key(i); if (key.startsWith(prefix)) result.set(key, originalStore.get(key, null)); } } catch (_) {}
+    for (const [key, value] of values) if (key.startsWith(prefix)) result.set(key, clone(value));
+    return [...result.entries()];
+  }
   const catalog = () => get('ivocab-books', []);
   function list() { return [{ id: BUILTIN, name: '雅思核心词汇', chapters: builtinChapters }, ...catalog()]; }
   function current() { return list().find(b => b.id === active) || list()[0]; }
@@ -136,7 +142,7 @@ window.VocabBooks = (function () {
     if (rows.length > 50000) throw new Error('每本词书最多 50000 条');
     return rows;
   }
-  const fields = { word: ['单词', 'word', '英文'], meaning: ['释义', 'meaning', 'meaningCN', '中文'], chapter: ['章节', 'chapter', 'chapterTitle', 'chapter_title'],
+  const fields = { collocations: ['常用搭配', 'collocations'], writing: ['写作替换表达', 'writing'], listening: ['听力易混词', 'listening'], senses: ['熟词生义', 'senses'], sources: ['参考来源', 'sources'], word: ['单词', 'word', '英文'], meaning: ['释义', 'meaning', 'meaningCN', '中文'], chapter: ['章节', 'chapter', 'chapterTitle', 'chapter_title'],
     phonetic: ['音标', 'phonetic'], pos: ['词性', 'pos'], exEN: ['英文例句', 'exEN', 'exampleEN', 'example_en'], exCN: ['例句翻译', 'exCN', 'exampleCN', 'example_cn'], root: ['词根', 'root'], extra: ['备注', 'extra'], id: ['id', '词条ID'] };
   function guess(rows) { const keys = Object.keys(rows[0]); return Object.fromEntries(Object.entries(fields).map(([f, aliases]) => [f, keys.find(k => aliases.some(a => a.toLowerCase() === k.toLowerCase())) || ''])); }
   function normalize(rows, mapping, old) {
@@ -164,7 +170,7 @@ window.VocabBooks = (function () {
       const scopedId = `c${chapter.id}:${rawId}`;
       const id = (rawId && (rawIdChapters.get(rawId).size > 1 || previous?.id === scopedId) ? scopedId : rawId) || previous?.id || `w-${crypto.randomUUID()}`;
       if (usedIds.has(id)) { issues.push(`第 ${i + 1} 条 ID 重复`); return; } usedIds.add(id);
-      words.push({ id, word, meaning, chapter: chapter.id, tag: '识记', ...Object.fromEntries(['phonetic', 'pos', 'exEN', 'exCN', 'root', 'extra'].map(f => [f, read(r, f)])) });
+      words.push({ id, word, meaning, chapter: chapter.id, tag: '识记', ...Object.fromEntries(['phonetic', 'pos', 'exEN', 'exCN', 'root', 'extra', 'collocations', 'writing', 'listening', 'senses', 'sources'].map(f => [f, read(r, f)])) });
     });
     return { chapters, words, issues, duplicates };
   }
@@ -173,6 +179,43 @@ window.VocabBooks = (function () {
   function download(name, value, type = 'application/json') {
     const url = URL.createObjectURL(new Blob([value], { type })), a = document.createElement('a');
     a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+  function exportEntry(word, book, chapter, standalone = false) {
+    const bookId = word.bookId || book?.id || BUILTIN;
+    const gk = word.gk || (bookId === BUILTIN ? 'ch' + chapter + ':' + word.id : bookId + ':' + word.id);
+    const bookName = word.bookName || book?.name || '雅思核心词汇';
+    const chapterName = book?.chapters.find(c => c.id === Number(chapter))?.title || String(chapter || '未分章');
+    const enriched = window.VocabEnrichment?.get({ ...word, bookId, gk }) || {};
+    return { ...word, ...enriched, id: standalone ? gk : word.id,
+      chapter: standalone ? bookName + ' [' + bookId + '] / ' + chapterName : chapterName,
+      bookId, bookName, gk, sourceChapter: chapter, sourceChapterTitle: chapterName };
+  }
+  function exportFile(name, words, kind) {
+    if (!words.length) throw new Error(kind === 'new-words' ? '当前用户的生词本为空，暂无可导出词条。' : '词库为空，暂无可导出词条。');
+    const safeName = name.replace(/[\\/:*?"<>|]/g, '_');
+    download(safeName + '-' + C.dateKey() + '.json', JSON.stringify({ name, kind, exportedAt: new Date().toISOString(), words }, null, 2));
+    return words.length;
+  }
+  async function exportBook(id = active) {
+    await init();
+    const book = list().find(b => b.id === id);
+    if (!book) throw new Error('未找到词书');
+    // Load directly without switching the active book or touching training state.
+    const words = book.id === BUILTIN
+      ? (await Promise.all(book.chapters.map(async ch => {
+          const data = await originalLoad(ch.id);
+          return data.words.map(w => exportEntry(w, book, ch.id));
+        }))).flat()
+      : book.words.map(w => exportEntry(w, book, w.chapter));
+    return exportFile(book.name, words, 'wordbook');
+  }
+  async function exportNewWords(uid = C.loadUsers().active, words) {
+    await init();
+    const user = C.loadUsers().users.find(u => u.id === uid);
+    if (!user) throw new Error('未找到用户');
+    const catalog = list();
+    const entries = words || get(globalKey(uid), {})?.newWordBook || [];
+    return exportFile(user.name + '-生词本', entries.map(w => exportEntry(w, catalog.find(b => b.id === (w.bookId || BUILTIN)), w.chapter || Number(w.gk?.match(/^ch(\d+):/)?.[1]), true)), 'new-words');
   }
   async function backup() {
     await pending;
@@ -193,7 +236,7 @@ window.VocabBooks = (function () {
     b.words.forEach(w => {
       if (!w || !['string', 'number'].includes(typeof w.id) || !String(w.id) || ids.has(String(w.id)) || !chapters.has(w.chapter)
         || typeof w.word !== 'string' || !C.normalize(w.word) || typeof w.meaning !== 'string' || !w.meaning.trim()) throw new Error('词条格式或 ID 不正确');
-      for (const f of ['phonetic', 'pos', 'tag', 'exEN', 'exCN', 'root', 'extra']) if (w[f] != null && typeof w[f] !== 'string') throw new Error('词条字段必须是文本');
+      for (const f of ['phonetic', 'pos', 'tag', 'exEN', 'exCN', 'root', 'extra', 'collocations', 'writing', 'listening', 'senses', 'sources']) if (w[f] != null && typeof w[f] !== 'string') throw new Error('词条字段必须是文本');
       ids.add(String(w.id));
     });
   }
@@ -204,11 +247,23 @@ window.VocabBooks = (function () {
     const ids = new Set();
     books.forEach(b => { validateBook(b); if (ids.has(b.id)) throw new Error('备份词书 ID 重复'); ids.add(b.id); });
     for (const [key, value] of Object.entries(records)) {
+      if (key.startsWith('ivocab-enrichment:')) {
+        if (!value || typeof value !== 'object' || Array.isArray(value) || Object.values(value).some(v=>typeof v !== 'string' || v.length > 10000)) throw new Error('备份词条拓展格式错误');
+      }
+      if (key.startsWith('ivocab-learning:')) {
+        if (!value?.word || typeof value.word.gk !== 'string' || typeof value.word.word !== 'string' || typeof value.word.meaning !== 'string'
+          || !value.skills || typeof value.skills !== 'object' || Array.isArray(value.skills)) throw new Error('备份复习记录格式错误');
+        for (const [mode, skill] of Object.entries(value.skills)) {
+          if (!['choice','spelling'].includes(mode) || !skill || typeof skill !== 'object' || Array.isArray(skill)) throw new Error('备份掌握模式格式错误');
+          for (const f of ['stage','dueAt','attempts','correct','wrong','lastAt']) if (skill[f] != null && (!Number.isFinite(skill[f]) || skill[f] < 0)) throw new Error('备份复习数值格式错误');
+          if (!Number.isInteger(skill.stage) || skill.stage > 6 || !Number.isFinite(skill.dueAt)) throw new Error('备份复习阶段格式错误');
+        }
+      }
       if (key.startsWith('ivocab-queue:') && (!Array.isArray(value) || value.some(w => !w || typeof w.word !== 'string' || typeof w.meaning !== 'string' || typeof w.gk !== 'string'))) throw new Error('备份题序格式错误');
       if (key === 'ivocab-users' && (!Array.isArray(value) || !value.length || value.some(u => !u || typeof u.id !== 'string' || typeof u.name !== 'string'))) throw new Error('备份用户格式错误');
       if (/^ivocab-(progress|global|state):/.test(key)) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('备份进度格式错误');
-        for (const f of ['currentIndex', 'completedCount', 'correctTotal', 'wrongTotal', 'dailyGoal', 'dailyCount', 'chapter', 'remaining', 'knownTotal']) {
+        for (const f of ['currentIndex', 'completedCount', 'correctTotal', 'wrongTotal', 'dailyGoal', 'dailyCount', 'chapter', 'remaining', 'knownTotal', 'groupStart', 'groupCorrectBase', 'groupWrongBase', 'groupKnownBase']) {
           if (value[f] != null && (!Number.isFinite(value[f]) || value[f] < 0)) throw new Error('备份数值格式错误');
         }
         if (value.history != null && (typeof value.history !== 'object' || Array.isArray(value.history)
@@ -235,8 +290,8 @@ window.VocabBooks = (function () {
     }
     return [...groups.values()];
   }
-  return { groupWords, init, list, current, select, get active() { return active; }, globalKey, stateKey, queueKey, migrate, esc,
-    parse, table, guess, fields, normalize, saveBook, flush, download, backup,
+  return { records, groupWords, init, list, current, select, get active() { return active; }, globalKey, stateKey, queueKey, migrate, esc,
+    parse, table, guess, fields, normalize, saveBook, flush, download, backup, exportBook, exportNewWords,
     async restoreBackup(raw) {
       if (raw?.format !== 'ivocab-backup' || raw.version !== 1 || !raw.records || typeof raw.records !== 'object') throw new Error('不是有效的系统备份');
       const entries = Object.entries(raw.records);
